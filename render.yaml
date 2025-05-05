@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: pretix-web
+    name: deentrada
     env: docker
     repo: https://github.com/ralvarado31/pretix
     branch: master
@@ -31,6 +31,14 @@ services:
           property: password
       - key: PRETIX_SECRET
         generateValue: true
+      - key: PRETIX_PRETIX_URL
+        value: https://deentrada.onrender.com
+      - key: PRETIX_INSTANCE_NAME
+        value: Sistema de Entradas
+      - key: PRETIX_REGISTRATION
+        value: "true"
+      - key: PRETIX_DJANGO_DEBUG
+        value: "false"
 
 databases:
   - name: pretix-db
