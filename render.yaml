@@ -2,43 +2,46 @@ services:
   - type: web
     name: deentrada
     env: docker
-    repo: https://github.com/ralvarado31/pretix
-    branch: master
-    dockerContext: .
-    dockerfilePath: docker/Dockerfile
+    image: pretix/standalone:stable
     autoDeploy: true
     plan: starter
     envVars:
-      - key: PRETIX_DB_HOST
+      - key: DATABASE_HOST
         fromDatabase:
           name: pretix-db
           property: host
-      - key: PRETIX_DB_PORT
+      - key: DATABASE_PORT
         fromDatabase:
           name: pretix-db
           property: port
-      - key: PRETIX_DB_NAME
+      - key: DATABASE_NAME
         fromDatabase:
           name: pretix-db
           property: database
-      - key: PRETIX_DB_USER
+      - key: DATABASE_USER
         fromDatabase:
           name: pretix-db
           property: user
-      - key: PRETIX_DB_PASSWORD
+      - key: DATABASE_PASSWORD
         fromDatabase:
           name: pretix-db
           property: password
-      - key: PRETIX_SECRET
+      - key: SECRET_KEY
         generateValue: true
-      - key: PRETIX_PRETIX_URL
+      - key: SITE_URL
         value: https://deentrada.onrender.com
-      - key: PRETIX_INSTANCE_NAME
+      - key: INSTANCE_NAME
         value: Sistema de Entradas
-      - key: PRETIX_REGISTRATION
+      - key: REGISTRATION
         value: "true"
-      - key: PRETIX_DJANGO_DEBUG
+      - key: DEBUG
         value: "false"
+      - key: MAIL_FROM
+        value: "noreply@deentrada.onrender.com"
+      - key: PORT
+        value: "8000"
+      - key: GUNICORN_CMD_ARGS
+        value: "--bind=0.0.0.0:8000 --workers=2"
 
 databases:
   - name: pretix-db
