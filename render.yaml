@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: pretix-web
+    env: docker
+    repo: https://github.com/ralvarado31/pretix
+    branch: master
+    dockerContext: .
+    dockerfilePath: docker/Dockerfile
+    autoDeploy: true
+    plan: starter
+    envVars:
+      - key: PRETIX_DB_HOST
+        fromDatabase:
+          name: pretix-db
+          property: host
+      - key: PRETIX_DB_PORT
+        fromDatabase:
+          name: pretix-db
+          property: port
+      - key: PRETIX_DB_NAME
+        fromDatabase:
+          name: pretix-db
+          property: database
+      - key: PRETIX_DB_USER
+        fromDatabase:
+          name: pretix-db
+          property: user
+      - key: PRETIX_DB_PASSWORD
+        fromDatabase:
+          name: pretix-db
+          property: password
+      - key: PRETIX_SECRET
+        generateValue: true
+
+databases:
+  - name: pretix-db
+    plan: starter
+    postgresMajorVersion: 14
