@@ -1,0 +1,114 @@
+{% load i18n %}
+
+<div class="payment-recurrente-details">
+    <div class="row">
+        <div class="col-md-6">
+            <h4>{% trans "Información básica del pago" %}</h4>
+            <dl class="dl-horizontal">
+                <dt>{% trans "ID de Checkout:" %}</dt>
+                <dd>{{ payment_info.checkout_id }}</dd>
+                
+                <dt>{% trans "ID de Pago:" %}</dt>
+                <dd>{{ payment_info.payment_id }}</dd>
+                
+                <dt>{% trans "Estado:" %}</dt>
+                <dd>
+                    {{ payment_info.estado }}
+                    {% if payment_info.status == 'pending' %}
+                        <span class="label label-warning">{% trans "Pendiente" %}</span>
+                    {% elif payment_info.status == 'succeeded' or payment_info.status == 'paid' %}
+                        <span class="label label-success">{% trans "Pagado" %}</span>
+                    {% elif payment_info.status == 'failed' or payment_info.status == 'cancelled' or payment_info.status == 'canceled' %}
+                        <span class="label label-danger">{% trans "Fallido" %}</span>
+                    {% else %}
+                        <span class="label label-default">{{ payment_info.status }}</span>
+                    {% endif %}
+                </dd>
+                
+                <dt>{% trans "Creado:" %}</dt>
+                <dd>{{ payment_info.created_at }}</dd>
+                
+                {% if payment_info.expires_at != "No disponible" %}
+                    <dt>{% trans "Expira:" %}</dt>
+                    <dd>{{ payment_info.expires_at }}</dd>
+                {% endif %}
+                
+                {% if payment_info.last_updated != "No disponible" %}
+                    <dt>{% trans "Última actualización:" %}</dt>
+                    <dd>{{ payment_info.last_updated }}</dd>
+                {% endif %}
+            </dl>
+        </div>
+        
+        <div class="col-md-6">
+            <h4>{% trans "Detalles del método de pago" %}</h4>
+            <dl class="dl-horizontal">
+                <dt>{% trans "Método:" %}</dt>
+                <dd>
+                    {% if payment_info.payment_method == 'card' %}
+                        <i class="fa fa-credit-card"></i> {% trans "Tarjeta" %}
+                    {% else %}
+                        {{ payment_info.payment_method|default:"N/A" }}
+                    {% endif %}
+                </dd>
+                
+                {% if payment_info.card_display != "N/A" %}
+                    <dt>{% trans "Tarjeta:" %}</dt>
+                    <dd>{{ payment_info.card_display }}</dd>
+                {% endif %}
+                
+                <dt>{% trans "Monto:" %}</dt>
+                <dd>{{ payment_info.amount_formatted }}</dd>
+                
+                {% if payment_info.fee_formatted != "N/A" %}
+                    <dt>{% trans "Comisión:" %}</dt>
+                    <dd>{{ payment_info.fee_formatted }}</dd>
+                {% endif %}
+                
+                {% if payment_info.vat_formatted != "N/A" %}
+                    <dt>{% trans "Impuestos retenidos:" %}</dt>
+                    <dd>{{ payment_info.vat_formatted }}</dd>
+                {% endif %}
+            </dl>
+        </div>
+    </div>
+    
+    {% if payment.state == "p" and payment_info.checkout_id %}
+        <div class="row">
+            <div class="col-md-12">
+                <div class="alert alert-info">
+                    <p>
+                        <i class="fa fa-info-circle"></i>
+                        {% trans "El estado se actualizará automáticamente cuando Recurrente envíe una notificación a través del webhook o durante la próxima actualización programada." %}
+                    </p>
+                    <a href="{% url 'plugins:pretix_recurrente:update_status' event=request.event.slug organizer=request.organizer.slug %}?payment={{ payment.pk }}" class="btn btn-primary btn-sm">
+                        <i class="fa fa-refresh"></i>
+                        {% trans "Actualizar estado manualmente" %}
+                    </a>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+    
+    {% if payment_data.checkout_url %}
+        <div class="row">
+            <div class="col-md-12">
+                <a href="{{ payment_data.checkout_url }}" target="_blank" class="btn btn-default">
+                    <i class="fa fa-external-link"></i>
+                    {% trans "Abrir página de pago" %}
+                </a>
+            </div>
+        </div>
+    {% endif %}
+
+    {% if payment_data %}
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <details>
+                    <summary>{% trans "Datos técnicos completos" %}</summary>
+                    <pre>{{ payment_data|pprint }}</pre>
+                </details>
+            </div>
+        </div>
+    {% endif %}
+</div> 

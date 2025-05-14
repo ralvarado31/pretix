@@ -1,0 +1,38 @@
+{% load i18n %}
+{% load static %}
+
+<div class="recurrente-payment-form">
+    <p>{% trans "Serás redirigido a Recurrente para completar el pago con tarjeta de crédito o débito." %}</p>
+    
+    {% if enable_recurring %}
+    <div class="form-check mt-3">
+        <input class="form-check-input" type="checkbox" name="recurrente_recurring" id="recurrente_recurring">
+        <label class="form-check-label" for="recurrente_recurring">
+            {% blocktrans with frequency=recurring_frequency %}
+            Configurar como pago recurrente ({{ frequency }})
+            {% endblocktrans %}
+        </label>
+    </div>
+    <div class="mt-2 small text-muted">
+        {% trans "Al habilitar el pago recurrente, autorizas cargos periódicos según la frecuencia seleccionada." %}
+    </div>
+    {% endif %}
+</div>
+
+<script type="text/javascript">
+    document.addEventListener('DOMContentLoaded', function() {
+        var recurringCheckbox = document.getElementById('recurrente_recurring');
+        if (recurringCheckbox) {
+            recurringCheckbox.addEventListener('change', function() {
+                // Guardar el estado en sessionStorage para recuperarlo si se recarga la página
+                sessionStorage.setItem('recurrente_recurring', this.checked);
+            });
+            
+            // Recuperar el estado guardado al cargar la página
+            var savedState = sessionStorage.getItem('recurrente_recurring');
+            if (savedState === 'true') {
+                recurringCheckbox.checked = true;
+            }
+        }
+    });
+</script> 

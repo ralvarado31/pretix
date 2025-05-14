@@ -1,0 +1,2 @@
+[pretix.plugin]
+pretix_recurrente = pretix_recurrente:PluginApp

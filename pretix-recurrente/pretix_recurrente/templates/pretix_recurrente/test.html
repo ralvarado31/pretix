@@ -1,0 +1,321 @@
+{% extends "pretixcontrol/event/base.html" %}
+{% load i18n %}
+{% load bootstrap3 %}
+
+{% block title %}{% trans "Pruebas de Recurrente" %}{% endblock %}
+
+{% block content %}
+<h1>{% trans "Pruebas de Recurrente" %}</h1>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="alert {% if plugin_enabled %}alert-success{% else %}alert-warning{% endif %}">
+            <strong>{% trans "Estado del plugin:" %}</strong> 
+            {% if plugin_enabled %}
+                {% trans "Habilitado" %}
+            {% else %}
+                {% trans "Deshabilitado" %} - <a href="{% url 'control:event.settings.payment.provider' event=request.event.slug organizer=request.organizer.slug provider='recurrente' %}" class="alert-link">{% trans "Configurar plugin" %}</a>
+            {% endif %}
+            | <strong>{% trans "Modo:" %}</strong> {% if test_mode %}{% trans "Pruebas" %}{% else %}{% trans "Producción" %}{% endif %}
+            | <strong>{% trans "API Key:" %}</strong> {{ api_key }}
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                <h3 class="panel-title">{% trans "Simular Webhook de Recurrente" %}</h3>
+            </div>
+            <div class="panel-body">
+                <p>{% trans "Utiliza este formulario para simular un webhook de Recurrente sin realizar transacciones reales." %}</p>
+                
+                <form method="post" class="form-horizontal">
+                    {% csrf_token %}
+                    
+                    <div class="form-group">
+                        <label class="col-md-3 control-label">{% trans "Pedido" %}</label>
+                        <div class="col-md-9">
+                            <select name="order_code" class="form-control" required>
+                                <option value="">{% trans "Selecciona un pedido" %}</option>
+                                {% for order in pending_orders %}
+                                    <option value="{{ order.code }}">{{ order.code }} ({{ order.total }} {{ order.event.currency }})</option>
+                                {% endfor %}
+                            </select>
+                            <p class="help-block">{% trans "Selecciona un pedido pendiente para simular el pago" %}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="col-md-3 control-label">{% trans "Pago" %}</label>
+                        <div class="col-md-9">
+                            <select name="payment_id" class="form-control" required>
+                                <option value="">{% trans "Selecciona un pago" %}</option>
+                                {% for payment in pending_payments %}
+                                    <option value="{{ payment.pk }}">{{ payment.order.code }} - {{ payment.amount }} {{ payment.order.event.currency }}</option>
+                                {% endfor %}
+                            </select>
+                            <p class="help-block">{% trans "Selecciona un pago pendiente de Recurrente" %}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="col-md-3 control-label">{% trans "Tipo de evento" %}</label>
+                        <div class="col-md-9">
+                            <select name="event_type" class="form-control" required>
+                                {% for event_type, event_label in webhook_types %}
+                                    <option value="{{ event_type }}">{{ event_label }} ({{ event_type }})</option>
+                                {% endfor %}
+                            </select>
+                            <p class="help-block">{% trans "Selecciona el tipo de evento a simular" %}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="col-md-3 control-label">{% trans "Webhook a usar" %}</label>
+                        <div class="col-md-9">
+                            <select name="webhook_target" class="form-control" required>
+                                <option value="global">{% trans "Webhook global" %}</option>
+                                <option value="event">{% trans "Webhook específico del evento" %}</option>
+                            </select>
+                            <p class="help-block">{% trans "Selecciona qué endpoint de webhook quieres probar" %}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <div class="col-md-offset-3 col-md-9">
+                            <button type="submit" name="simulate_webhook" class="btn btn-primary">
+                                {% trans "Simular Webhook" %}
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                <h3 class="panel-title">{% trans "Información de Webhooks" %}</h3>
+            </div>
+            <div class="panel-body">
+                <p><strong>{% trans "Webhook URL del evento:" %}</strong> <code>{{ webhook_url }}</code></p>
+                <p><strong>{% trans "Webhook URL global:" %}</strong> <code>{{ global_webhook_url }}</code></p>
+                <p>{% trans "Asegúrate de que estas URLs sean accesibles desde Internet y estén configuradas en el panel de Recurrente." %}</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                <h3 class="panel-title">{% trans "Verificar conexión con API" %}</h3>
+            </div>
+            <div class="panel-body">
+                <p>{% trans "Esta función permite verificar si la conexión con la API de Recurrente está funcionando correctamente." %}</p>
+                
+                <form method="post" class="form-horizontal">
+                    {% csrf_token %}
+                    <div class="form-group">
+                        <div class="col-md-12">
+                            <button type="submit" name="check_api" class="btn btn-info">
+                                {% trans "Verificar conexión con API" %}
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                <h3 class="panel-title">{% trans "Verificar estado de un pago" %}</h3>
+            </div>
+            <div class="panel-body">
+                <p>{% trans "Esta función permite consultar el estado de un pago directamente desde la API de Recurrente." %}</p>
+                
+                <form method="post" class="form-horizontal">
+                    {% csrf_token %}
+                    
+                    <div class="form-group">
+                        <label class="col-md-3 control-label">{% trans "Pago" %}</label>
+                        <div class="col-md-9">
+                            <select name="payment_id" class="form-control" required>
+                                <option value="">{% trans "Selecciona un pago" %}</option>
+                                {% for payment in pending_payments %}
+                                    <option value="{{ payment.pk }}">{{ payment.order.code }} - {{ payment.amount }} {{ payment.order.event.currency }}</option>
+                                {% endfor %}
+                                {% for payment in recent_payments %}
+                                    <option value="{{ payment.pk }}">{{ payment.order.code }} - {{ payment.amount }} ({{ payment.get_state_display }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <div class="col-md-offset-3 col-md-9">
+                            <button type="submit" name="verify_payment" class="btn btn-info">
+                                {% trans "Verificar estado de pago" %}
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                <h3 class="panel-title">{% trans "Información de Depuración" %}</h3>
+            </div>
+            <div class="panel-body">
+                <ul class="nav nav-tabs" role="tablist">
+                    <li role="presentation" class="active">
+                        <a href="#pending-orders" aria-controls="pending-orders" role="tab" data-toggle="tab">{% trans "Pedidos Pendientes" %}</a>
+                    </li>
+                    <li role="presentation">
+                        <a href="#pending-payments" aria-controls="pending-payments" role="tab" data-toggle="tab">{% trans "Pagos Pendientes" %}</a>
+                    </li>
+                    <li role="presentation">
+                        <a href="#recent-payments" aria-controls="recent-payments" role="tab" data-toggle="tab">{% trans "Pagos Recientes" %}</a>
+                    </li>
+                    <li role="presentation">
+                        <a href="#api-info" aria-controls="api-info" role="tab" data-toggle="tab">{% trans "Información de API" %}</a>
+                    </li>
+                </ul>
+                
+                <div class="tab-content">
+                    <div role="tabpanel" class="tab-pane active" id="pending-orders">
+                        <h4>{% trans "Pedidos Pendientes" %}</h4>
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>{% trans "Código" %}</th>
+                                    <th>{% trans "Fecha" %}</th>
+                                    <th>{% trans "Total" %}</th>
+                                    <th>{% trans "Estado" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for order in pending_orders %}
+                                <tr>
+                                    <td>{{ order.code }}</td>
+                                    <td>{{ order.datetime|date:"SHORT_DATETIME_FORMAT" }}</td>
+                                    <td>{{ order.total }} {{ order.event.currency }}</td>
+                                    <td>{{ order.get_status_display }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="4">{% trans "No hay pedidos pendientes" %}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div role="tabpanel" class="tab-pane" id="pending-payments">
+                        <h4>{% trans "Pagos Pendientes de Recurrente" %}</h4>
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>{% trans "ID" %}</th>
+                                    <th>{% trans "Pedido" %}</th>
+                                    <th>{% trans "Monto" %}</th>
+                                    <th>{% trans "Estado" %}</th>
+                                    <th>{% trans "Checkout ID" %}</th>
+                                    <th>{% trans "Acciones" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for payment in pending_payments %}
+                                <tr>
+                                    <td>{{ payment.pk }}</td>
+                                    <td>{{ payment.order.code }}</td>
+                                    <td>{{ payment.amount }} {{ payment.order.event.currency }}</td>
+                                    <td>{{ payment.get_state_display }}</td>
+                                    <td>{{ payment.info_data.checkout_id|default:"—" }}</td>
+                                    <td>
+                                        <form method="post" style="display: inline;">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="payment_id" value="{{ payment.pk }}">
+                                            <button type="submit" name="verify_payment" class="btn btn-xs btn-info">
+                                                {% trans "Verificar" %}
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="6">{% trans "No hay pagos pendientes de Recurrente" %}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div role="tabpanel" class="tab-pane" id="recent-payments">
+                        <h4>{% trans "Pagos Recientes (confirmados o fallidos)" %}</h4>
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>{% trans "ID" %}</th>
+                                    <th>{% trans "Pedido" %}</th>
+                                    <th>{% trans "Monto" %}</th>
+                                    <th>{% trans "Estado" %}</th>
+                                    <th>{% trans "Fecha" %}</th>
+                                    <th>{% trans "Checkout ID" %}</th>
+                                    <th>{% trans "Acciones" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for payment in recent_payments %}
+                                <tr>
+                                    <td>{{ payment.pk }}</td>
+                                    <td>{{ payment.order.code }}</td>
+                                    <td>{{ payment.amount }} {{ payment.order.event.currency }}</td>
+                                    <td>{{ payment.get_state_display }}</td>
+                                    <td>{{ payment.created|date:"SHORT_DATETIME_FORMAT" }}</td>
+                                    <td>{{ payment.info_data.checkout_id|default:"—" }}</td>
+                                    <td>
+                                        <form method="post" style="display: inline;">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="payment_id" value="{{ payment.pk }}">
+                                            <button type="submit" name="verify_payment" class="btn btn-xs btn-info">
+                                                {% trans "Verificar" %}
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="7">{% trans "No hay pagos recientes de Recurrente" %}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div role="tabpanel" class="tab-pane" id="api-info">
+                        <h4>{% trans "Información de API" %}</h4>
+                        <dl class="dl-horizontal">
+                            <dt>{% trans "URL de webhook global:" %}</dt>
+                            <dd><code>{{ global_webhook_url }}</code></dd>
+                            
+                            <dt>{% trans "URL de webhook del evento:" %}</dt>
+                            <dd><code>{{ webhook_url }}</code></dd>
+                            
+                            <dt>{% trans "Endpoints de API:" %}</dt>
+                            <dd>
+                                <pre>{{ api_endpoints|default:"No disponible" }}</pre>
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,83 @@
+{% load i18n %}
+{% load l10n %}
+
+<div class="payment-recurrente-info">
+    <h4>{% trans "Información del pago con Recurrente" %}</h4>
+    
+    <table class="table table-condensed">
+        <tbody>
+            {% if payment_info.receipt_number %}
+            <tr>
+                <th>{% trans "Número de recibo:" %}</th>
+                <td>{{ payment_info.receipt_number }}</td>
+            </tr>
+            {% endif %}
+            
+            {% if payment_info.authorization_code %}
+            <tr>
+                <th>{% trans "Código de autorización:" %}</th>
+                <td>{{ payment_info.authorization_code }}</td>
+            </tr>
+            {% endif %}
+            
+            {% if payment_info.transaction_date %}
+            <tr>
+                <th>{% trans "Fecha:" %}</th>
+                <td>{{ payment_info.transaction_date }}</td>
+            </tr>
+            {% endif %}
+            
+            {% if payment_info.customer_name %}
+            <tr>
+                <th>{% trans "Nombre:" %}</th>
+                <td>{{ payment_info.customer_name }}</td>
+            </tr>
+            {% endif %}
+            
+            {% if payment_info.customer_email %}
+            <tr>
+                <th>{% trans "Correo electrónico:" %}</th>
+                <td>{{ payment_info.customer_email }}</td>
+            </tr>
+            {% endif %}
+            
+            {% if payment_info.payment_method %}
+            <tr>
+                <th>{% trans "Método de pago:" %}</th>
+                <td>{{ payment_info.payment_method }}</td>
+            </tr>
+            {% endif %}
+            
+            {% if payment_info.card_last4 %}
+            <tr>
+                <th>{% trans "Tarjeta:" %}</th>
+                <td>**** **** **** {{ payment_info.card_last4 }}</td>
+            </tr>
+            {% endif %}
+            
+            {% if payment_info.status %}
+            <tr>
+                <th>{% trans "Estado:" %}</th>
+                <td>
+                    {% if payment_info.status == 'succeeded' %}
+                        <span class="label label-success">{% trans "Pagado" %}</span>
+                    {% elif payment_info.status == 'failed' %}
+                        <span class="label label-danger">{% trans "Fallido" %}</span>
+                    {% elif payment_info.status == 'pending' %}
+                        <span class="label label-warning">{% trans "Pendiente" %}</span>
+                    {% else %}
+                        {{ payment_info.status }}
+                    {% endif %}
+                </td>
+            </tr>
+            {% endif %}
+            
+            {% if payment_info.payment_id %}
+            <tr>
+                <th>{% trans "ID de pago:" %}</th>
+                <td>{{ payment_info.payment_id }}</td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>

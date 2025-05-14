@@ -1,0 +1,299 @@
+{% load i18n %}
+
+<div class="payment-pending-info">
+    <div class="panel panel-primary">
+        <div class="panel-heading">
+            <h3 class="panel-title">{% trans "Información del pago con Recurrente" %}</h3>
+        </div>
+        <div class="panel-body">
+            {% if status %}
+                <div class="row">
+                    <div class="col-md-6">
+                        <dl class="dl-horizontal">
+                            <dt>{% trans "Estado:" %}</dt>
+                            <dd>
+                                {% if status == 'pending' and is_from_recurrente_redirect %}
+                                    <div class="processing-payment">
+                                        <span class="label label-info">{% trans "Procesando" %}</span>
+                                        <span class="processing-dots"></span>
+                                    </div>
+                                {% else %}
+                                    {{ status_text }}
+                                    {% if status == 'pending' %}
+                                        <span class="label label-warning">{% trans "Pendiente" %}</span>
+                                    {% elif status == 'succeeded' or status == 'paid' %}
+                                        <span class="label label-success">{% trans "Pagado" %}</span>
+                                    {% elif status == 'failed' or status == 'cancelled' or status == 'canceled' %}
+                                        <span class="label label-danger">{% trans "Fallido" %}</span>
+                                    {% else %}
+                                        <span class="label label-default">{{ status }}</span>
+                                    {% endif %}
+                                {% endif %}
+                            </dd>
+                            
+                            {% if payment.info_data.payment_id %}
+                                <dt>{% trans "ID de Pago:" %}</dt>
+                                <dd>{{ payment.info_data.payment_id }}</dd>
+                            {% endif %}
+
+                            {% if payment.info_data.payment_method %}
+                                <dt>{% trans "Método de Pago:" %}</dt>
+                                <dd>
+                                    {{ payment.info_data.payment_method|upper }}
+                                    {% if payment.info_data.card_network and payment.info_data.card_last4 %}
+                                        - {{ payment.info_data.card_network|upper }} **** {{ payment.info_data.card_last4 }}
+                                    {% endif %}
+                                </dd>
+                            {% endif %}
+
+                            {% if payment.info_data.amount_in_cents %}
+                                <dt>{% trans "Monto:" %}</dt>
+                                <dd>
+                                    {% with amount=payment.info_data.amount_in_cents|floatformat:2|stringformat:'s' %}
+                                        {{ amount|slice:":-2" }}.{{ amount|slice:"-2:" }} {{ payment.info_data.currency }}
+                                    {% endwith %}
+                                </dd>
+                            {% endif %}
+                            
+                            {% if created_at != "No disponible" %}
+                                <dt>{% trans "Creado:" %}</dt>
+                                <dd>{{ created_at }}</dd>
+                            {% endif %}
+                            {% if expires_at != "No disponible" %}
+                                <dt>{% trans "Expira:" %}</dt>
+                                <dd>{{ expires_at }}</dd>
+                            {% endif %}
+                            {% if last_updated != "No disponible" %}
+                                <dt>{% trans "Última actualización:" %}</dt>
+                                <dd>{{ last_updated }}</dd>
+                            {% endif %}
+                            
+                            {% if payment.info_data.failure_reason_recurrente %}
+                                <dt>{% trans "Motivo:" %}</dt>
+                                <dd class="text-danger">
+                                    {{ payment.info_data.failure_reason_recurrente }}
+                                </dd>
+                            {% endif %}
+                        </dl>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="payment-actions">
+                            {% if has_checkout_url %}
+                                <p>
+                                    <a href="{{ checkout_url }}" target="_blank" class="btn btn-primary btn-block">
+                                        <i class="fa fa-credit-card"></i> 
+                                        {% trans "Continuar con el pago" %}
+                                    </a>
+                                </p>
+                                <p class="text-muted small">
+                                    {% trans "Se abrirá la página de pago de Recurrente en una nueva ventana." %}
+                                </p>
+                            {% endif %}
+                            
+                            <p>
+                                <a href="{{ update_url }}" class="btn btn-default btn-block" id="update-status-btn">
+                                    <i class="fa fa-refresh"></i>
+                                    {% trans "Actualizar estado del pago" %}
+                                </a>
+                            </p>
+                            <p class="text-muted small">
+                                {% trans "Si ya realizaste el pago pero aún aparece como pendiente, haz clic para verificar el estado actual." %}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            {% else %}
+                <div class="alert alert-warning">
+                    <p>{% trans "Tu pago con Recurrente está pendiente." %}</p>
+                    {% if has_checkout_url %}
+                        <p>
+                            <a href="{{ checkout_url }}" target="_blank" class="btn btn-primary">
+                                <i class="fa fa-credit-card"></i> 
+                                {% trans "Completar el pago" %}
+                            </a>
+                            <a href="{{ update_url }}" class="btn btn-default">
+                                <i class="fa fa-refresh"></i>
+                                {% trans "Verificar estado" %}
+                            </a>
+                        </p>
+                    {% endif %}
+                </div>
+            {% endif %}
+            
+            <div class="help-block">
+                {% if is_from_recurrente_redirect %}
+                    <div class="alert alert-info">
+                        <p>
+                            <i class="fa fa-info-circle"></i>
+                            {% blocktrans %}
+                            <strong>¡Tu pago está siendo procesado!</strong> Estamos esperando la confirmación de Recurrente.
+                            {% endblocktrans %}
+                        </p>
+                        <p>
+                            {% blocktrans %}
+                            Esta página se actualizará automáticamente cuando recibamos la confirmación de pago.
+                            No es necesario que realices ninguna acción adicional.
+                            {% endblocktrans %}
+                        </p>
+                    </div>
+                {% else %}
+                    <p>
+                        <i class="fa fa-info-circle"></i>
+                        {% blocktrans %}
+                        Si ya completaste el pago y aún aparece como pendiente, espera unos minutos y actualiza la página.
+                        Los pagos generalmente se procesan automáticamente en menos de 5 minutos.
+                        {% endblocktrans %}
+                    </p>
+                {% endif %}
+                
+                <p>
+                    <i class="fa fa-question-circle"></i>
+                    {% blocktrans %}
+                    Si tienes algún problema con el pago, contacta al organizador del evento.
+                    {% endblocktrans %}
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .processing-payment {
+        display: inline-flex;
+        align-items: center;
+    }
+    .processing-dots:after {
+        content: '';
+        animation: dots 1.5s steps(5, end) infinite;
+    }
+    @keyframes dots {
+        0%, 20% { content: ''; }
+        40% { content: '.'; }
+        60% { content: '..'; }
+        80%, 100% { content: '...'; }
+    }
+</style>
+
+<script>
+    (function() {
+        // Configuración
+        const checkInterval = 5000; // Comprobar cada 5 segundos
+        const maxAttempts = 24;     // Máximo 2 minutos (24 intentos * 5 segundos)
+        
+        let attempts = 0;
+        let isChecking = false; // Para evitar múltiples solicitudes simultáneas
+        
+        // Construir la URL del endpoint
+        const orderCode = '{{ order.code }}';
+        const orderSecret = '{{ order.secret }}';
+        const paymentId = '{{ payment.pk }}';
+        
+        function buildCheckUrl(forceCheck = false) {
+            let url = '{% url "plugins:pretix_recurrente:check_status" organizer=order.event.organizer.slug event=order.event.slug %}?order=' + orderCode + '&secret=' + orderSecret + '&payment=' + paymentId;
+            if (forceCheck) {
+                url += '&force_check=1';
+            }
+            return url;
+        }
+        
+        // Función para verificar el estado del pago
+        function checkPaymentStatus() {
+            if (isChecking) return; // Evitar múltiples solicitudes simultáneas
+            
+            isChecking = true;
+            attempts++;
+            
+            console.log(`Intento ${attempts}: Verificando estado del pago...`);
+            
+            // Cada tercer intento, hacer una verificación forzada directo con Recurrente
+            const shouldForceCheck = attempts % 3 === 0;
+            const checkUrl = buildCheckUrl(shouldForceCheck);
+            
+            if (shouldForceCheck) {
+                console.log('Realizando verificación forzada con Recurrente...');
+            }
+            
+            fetch(checkUrl, {
+                method: 'GET',
+                headers: {
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0',
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest' // Para identificar solicitudes AJAX
+                },
+                cache: 'no-store'
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Error en la respuesta del servidor: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log(`Respuesta recibida:`, data);
+                
+                // Verificar si el pago está confirmado de varias maneras
+                const paymentConfirmed = 
+                    data.paid === true || 
+                    data.payment_state === 'confirmed' || 
+                    data.order_status === 'p' ||
+                    (data.payment_info && (
+                        data.payment_info.status === 'succeeded' || 
+                        data.payment_info.status === 'paid'
+                    ));
+                
+                if (paymentConfirmed) {
+                    console.log('¡Pago confirmado! Recargando página...');
+                    // Forzar recarga completa de la página sin caché
+                    window.location.href = window.location.href.split('?')[0] + '?nocache=' + new Date().getTime();
+                } else if (attempts < maxAttempts) {
+                    // Si aún no está confirmado, programar próxima verificación
+                    isChecking = false;
+                    setTimeout(checkPaymentStatus, checkInterval);
+                } else {
+                    // Si hemos alcanzado el máximo de intentos, ofrecer actualización manual
+                    console.log('Máximo de intentos alcanzado. Cambiando a modo manual.');
+                    const updateBtn = document.getElementById('update-status-btn');
+                    if (updateBtn) {
+                        updateBtn.classList.add('btn-primary');
+                        updateBtn.classList.remove('btn-default');
+                        updateBtn.innerHTML = '<i class="fa fa-refresh"></i> {% trans "Actualizar ahora" %}';
+                    }
+                    
+                    // Mostrar mensaje al usuario
+                    const processingElem = document.querySelector('.processing-payment');
+                    if (processingElem) {
+                        processingElem.innerHTML = '<span class="label label-warning">{% trans "Pendiente" %}</span> <a href="{{ update_url }}" class="btn btn-xs btn-primary">{% trans "Comprobar ahora" %}</a>';
+                    }
+                    
+                    // Añadir mensaje para el usuario
+                    const helpBlock = document.querySelector('.help-block');
+                    if (helpBlock) {
+                        const timeoutMsg = document.createElement('div');
+                        timeoutMsg.className = 'alert alert-warning';
+                        timeoutMsg.innerHTML = '<p><i class="fa fa-exclamation-triangle"></i> {% trans "Han pasado 2 minutos y no hemos recibido confirmación automática. Puedes intentar verificar manualmente o contactar al organizador." %}</p>';
+                        helpBlock.prepend(timeoutMsg);
+                    }
+                    
+                    isChecking = false;
+                }
+            })
+            .catch(error => {
+                console.error('Error al verificar estado del pago:', error);
+                // Si hay error, seguir intentando hasta alcanzar el máximo
+                isChecking = false;
+                if (attempts < maxAttempts) {
+                    setTimeout(checkPaymentStatus, checkInterval);
+                }
+            });
+        }
+        
+        // Iniciar la verificación automática
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => setTimeout(checkPaymentStatus, 1000));
+        } else {
+            setTimeout(checkPaymentStatus, 1000); // Empezar después de 1 segundo
+        }
+    })();
+</script> 
