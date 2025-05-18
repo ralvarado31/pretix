@@ -1,5 +1,5 @@
 recursive-include pretix_recurrente/templates *
 recursive-include pretix_recurrente/static *
-recursive-include pretix_recurrente/locale *
+recursive-include pretix_recurrente/locale *.po *.mo
 include LICENSE
 include README.md

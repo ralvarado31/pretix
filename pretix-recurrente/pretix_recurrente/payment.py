@@ -16,7 +16,8 @@ from pretix.multidomain.urlreverse import build_absolute_uri, eventreverse
 from django.template.loader import get_template
 from datetime import datetime
 import urllib.parse
-from .utils import get_descriptive_status, format_date
+from .utils import get_descriptive_status, format_date, extract_checkout_id_from_url, get_payment_details_from_recurrente
+import re
 
 logger = logging.getLogger('pretix.plugins.recurrente')
 
@@ -69,89 +70,53 @@ class Recurrente(BasePaymentProvider):
             list(super().settings_form_fields.items()) + [
                 ('api_key', forms.CharField(
                     label=_('API Key (X-PUBLIC-KEY)'),
-                    help_text=_('Ingresa tu API Key pública de Recurrente'),
+                    help_text=_('Enter your Recurrente public API Key'),
                     required=True,
                 )),
                 ('api_secret', forms.CharField(
                     label=_('API Secret (X-SECRET-KEY)'),
-                    help_text=_('Ingresa tu API Secret de Recurrente'),
+                    help_text=_('Enter your Recurrente API Secret'),
                     required=True,
                     widget=forms.PasswordInput(render_value=True),
                 )),
                 ('webhook_secret', forms.CharField(
                     label=_('Webhook Secret'),
-                    help_text=_('Ingresa el secret para validar los webhooks de Recurrente'),
+                    help_text=_('Enter the secret to validate Recurrente webhooks. This is crucial for security and prevention of duplicate processing.'),
                     required=True,
                     widget=forms.PasswordInput(render_value=True),
                 )),
-                ('test_mode', forms.BooleanField(
-                    label=_('Modo de pruebas'),
-                    help_text=_('Si está activado, se usará el entorno de pruebas de Recurrente'),
+                ('payment_description', forms.CharField(
+                    label=_('Payment description'),
+                    help_text=_('Description that the customer will see when making the payment'),
                     required=False,
+                    initial=_('Ticket payment for {event}'),
                 )),
+                # Campos ocultos con valores predeterminados para mantener compatibilidad con el código existente
                 ('production_api_url', forms.CharField(
-                    label=_('URL de API (Producción)'),
-                    help_text=_('URL base de la API de Recurrente para producción. Prueba con: https://app.recurrente.com/api, https://api.recurrente.com, https://checkout.recurrente.com'),
+                    widget=forms.HiddenInput(),
                     required=False,
                     initial='https://app.recurrente.com/api',
                 )),
                 ('sandbox_api_url', forms.CharField(
-                    label=_('URL de API (Sandbox)'),
-                    help_text=_('URL base de la API de Recurrente para pruebas. Prueba con: https://app.recurrente.com/api, https://api.recurrente.com, https://sandbox.recurrente.com'),
+                    widget=forms.HiddenInput(),
                     required=False,
                     initial='https://app.recurrente.com/api',
                 )),
                 ('alternative_api_path', forms.CharField(
-                    label=_('Ruta de API alternativa'),
-                    help_text=_('Si la ruta de API por defecto no funciona, prueba con /checkout/v1, /v1/checkouts, etc. Sin barras iniciales.'),
+                    widget=forms.HiddenInput(),
                     required=False,
                     initial='',
                 )),
                 ('ignore_ssl', forms.BooleanField(
-                    label=_('Ignorar verificación SSL'),
-                    help_text=_('SOLO PARA DEPURACIÓN: Desactiva la verificación de certificados SSL. No usar en producción.'),
+                    widget=forms.HiddenInput(),
                     required=False,
                     initial=False,
                 )),
-                ('payment_description', forms.CharField(
-                    label=_('Descripción del pago'),
-                    help_text=_('Descripción que verá el cliente al realizar el pago'),
-                    required=False,
-                    initial=_('Pago de entradas para {event}'),
-                )),
-                ('test_api_connection', forms.BooleanField(
-                    label=_('Probar conexión API'),
-                    help_text=_('Activa esta opción y guarda la configuración para probar la conexión con la API de Recurrente. El resultado se mostrará en la parte superior de la página.'),
+                ('test_mode', forms.BooleanField(
+                    widget=forms.HiddenInput(),
                     required=False,
                     initial=False,
-                )),
-                ('enable_recurring', forms.BooleanField(
-                    label=_('Habilitar pagos recurrentes'),
-                    help_text=_('Si está activado, permite al cliente configurar pagos recurrentes'),
-                    required=False,
-                    initial=False,
-                )),
-                ('recurring_frequency', forms.ChoiceField(
-                    label=_('Frecuencia de pagos recurrentes'),
-                    help_text=_('Frecuencia con la que se realizarán los pagos recurrentes'),
-                    required=False,
-                    choices=(
-                        ('weekly', _('Semanal')),
-                        ('biweekly', _('Quincenal')),
-                        ('monthly', _('Mensual')),
-                    ),
-                    initial='monthly',
-                )),
-                ('recurring_end_behavior', forms.ChoiceField(
-                    label=_('Comportamiento al finalizar'),
-                    help_text=_('Determina qué sucede cuando un pago recurrente finaliza'),
-                    required=False,
-                    choices=(
-                        ('cancel', _('Cancelar suscripción')),
-                        ('continue', _('Continuar indefinidamente')),
-                    ),
-                    initial='cancel',
-                )),
+                ))
             ]
         )
 
@@ -235,10 +200,9 @@ class Recurrente(BasePaymentProvider):
             'event': self.event,
             'total': total,
             'order': order,
-            'enable_recurring': self.settings.get('enable_recurring', as_type=bool),
-            'recurring_frequency': dict(self.settings_form_fields['recurring_frequency'].choices).get(
-                self.settings.get('recurring_frequency', 'monthly')
-            )
+            # Campos de recurrencia eliminados en la versión simplificada
+            'enable_recurring': False,
+            'recurring_frequency': ''
         }
         return template.render(ctx)
 
@@ -250,6 +214,12 @@ class Recurrente(BasePaymentProvider):
     def payment_is_valid_session(self, request):
         # Verificar si la sesión de pago es válida
         return True
+        
+    def get_html_info(self, payment):
+        """
+        Obtiene la información HTML detallada para mostrarla en el panel de control
+        """
+        return self.get_payment_info_text(payment)
 
     def checkout_confirm_render(self, request, order=None):
         # Renderizar la confirmación del checkout
@@ -379,9 +349,13 @@ class Recurrente(BasePaymentProvider):
             if not payment_description:
                 payment_description = _('Pago de entradas para {event}').format(event=self.event.name)
 
-            # Construir URLs de retorno
+            # Construir URLs de retorno con parámetros incluidos
             success_url = build_absolute_uri(request.event, 'plugins:pretix_recurrente:success')
+            success_url = f"{success_url}?order={order.code}"
+            
             cancel_url = build_absolute_uri(request.event, 'plugins:pretix_recurrente:cancel')
+            cancel_url = f"{cancel_url}?order={order.code}"
+            
             webhook_url = build_absolute_uri(request.event, 'plugins:pretix_recurrente:webhook')
 
             # URL global para el webhook (recomendada para configurar en Recurrente)
@@ -842,15 +816,87 @@ class Recurrente(BasePaymentProvider):
         """
         Renderizar información detallada del pago para el panel de control.
         """
-        from .utils import get_descriptive_status, format_date
+        from .utils import get_descriptive_status, format_date, extract_checkout_id_from_url, get_payment_details_from_recurrente
         
         template = get_template('pretix_recurrente/control.html')
         
         # Obtener info_data o diccionario vacío si no existe
         info_data = payment.info_data or {}
         
-        # Establecer estado con valor predeterminado si no hay estado
-        status = info_data.get('status')
+        # Si el pago está confirmado pero falta información importante, intentar obtenerla
+        if payment.state == OrderPayment.PAYMENT_STATE_CONFIRMED:
+            # Variables para verificar si falta información importante
+            missing_receipt_info = not (info_data.get('receipt_number') or info_data.get('authorization_code'))
+            missing_card_info = not (info_data.get('card_network') or info_data.get('card_last4'))
+            
+            # Si falta información importante, intentar obtenerla desde diferentes fuentes
+            if missing_receipt_info or missing_card_info:
+                logger.info(f"Falta información para pago {payment.pk}, intentando recuperar datos")
+                
+                # 1. Primero intentar obtener datos desde el checkout_url si existe
+                if info_data.get('checkout_url'):
+                    try:
+                        receipt_data = get_payment_details_from_recurrente(
+                            info_data['checkout_url'],
+                            ignore_ssl=self.settings.get('ignore_ssl', False)
+                        )
+                        
+                        if receipt_data:
+                            logger.info(f"Datos recuperados de la API para pago {payment.pk}: {receipt_data}")
+                            # Actualizar info_data con los datos de la API
+                            if 'receipt_number' in receipt_data:
+                                info_data['receipt_number'] = receipt_data['receipt_number']
+                            if 'authorization_code' in receipt_data:
+                                info_data['authorization_code'] = receipt_data['authorization_code']
+                            if 'card_network' in receipt_data:
+                                info_data['card_network'] = receipt_data['card_network']
+                            if 'card_last4' in receipt_data:
+                                info_data['card_last4'] = receipt_data['card_last4']
+                                
+                                # Guardar cambios en el objeto payment
+                                payment.info_data = info_data
+                                payment.save(update_fields=['info'])
+                    except Exception as e:
+                        logger.warning(f"Error al obtener datos de la API: {str(e)}")
+                
+                # 2. Si aún falta información y hay un payment_id, intentar consulta a la API
+                if (missing_receipt_info or missing_card_info) and info_data.get('payment_id'):
+                    try:
+                        # Obtener credenciales
+                        api_key = self.settings.get('api_key')
+                        api_secret = self.settings.get('api_secret')
+                        
+                        if api_key and api_secret:
+                            # Consultar la API
+                            payment_data = get_payment_details_from_recurrente(
+                                api_key, 
+                                api_secret, 
+                                payment_id=info_data['payment_id'],
+                                ignore_ssl=self.settings.get('ignore_ssl', False)
+                            )
+                            
+                            if payment_data:
+                                logger.info(f"Datos recuperados de la API para pago {payment.pk}: {payment_data}")
+                                # Actualizar info_data con los datos de la API
+                                if 'receipt_number' in payment_data:
+                                    info_data['receipt_number'] = payment_data['receipt_number']
+                                if 'authorization_code' in payment_data:
+                                    info_data['authorization_code'] = payment_data['authorization_code']
+                                if 'card_network' in payment_data:
+                                    info_data['card_network'] = payment_data['card_network']
+                                if 'card_last4' in payment_data:
+                                    info_data['card_last4'] = payment_data['card_last4']
+                                
+                                # Guardar cambios en el objeto payment
+                                payment.info_data = info_data
+                                payment.save(update_fields=['info'])
+                    except Exception as e:
+                        logger.warning(f"Error al obtener datos de la API: {str(e)}")
+        
+        # --- Procesar los campos extraídos de diferentes fuentes disponibles ---
+        
+        # Mapear campos de la respuesta procesada a los campos que espera la plantilla
+        status = info_data.get('status_recurrente') or info_data.get('status')
         if not status and payment.state == OrderPayment.PAYMENT_STATE_CONFIRMED:
             status = 'succeeded'  # Si el pago está confirmado pero no tiene status, asignar succeeded
         elif not status and payment.state == OrderPayment.PAYMENT_STATE_FAILED:
@@ -861,30 +907,69 @@ class Recurrente(BasePaymentProvider):
         # Mostrar estado descriptivo en español
         status_text = info_data.get('estado') or get_descriptive_status(status)
         
+        # Mapear IDs de pago y checkout
+        checkout_id = info_data.get('external_checkout_id') or info_data.get('checkout_id', info_data.get('recurrente_checkout_id', 'N/A'))
+        payment_id = info_data.get('external_payment_id') or info_data.get('payment_id', info_data.get('recurrente_payment_id', 'N/A'))
+        
+        # Mapear detalles de tarjeta y método de pago
+        payment_method = info_data.get('payment_method_type') or info_data.get('payment_method', 'card')
+        card_network = info_data.get('card_network') or ''
+        card_last4 = info_data.get('card_last4') or ''
+        
+        # Mapear información de fecha
+        created_at = None
+        
+        # Intentar obtener la fecha de varias fuentes posibles
+        if info_data.get('created_at_recurrente'):
+            created_at = format_date(info_data.get('created_at_recurrente'))
+        elif info_data.get('created'):
+            created_at = format_date(info_data.get('created')) 
+        elif info_data.get('created_at'):
+            created_at = format_date(info_data.get('created_at'))
+        else:
+            # Usar la fecha de creación del pago como último recurso
+            created_at = payment.created.strftime('%d/%m/%Y %H:%M')
+        
+        # Extraer datos del recibo de Recurrente de varias posibles ubicaciones
+        webhook_data = info_data.get('webhook_data', {})
+        
+        # Extraer número de recibo (puede estar en diferentes lugares)
+        receipt_number = info_data.get('receipt_number') or webhook_data.get('receipt_number')
+        if not receipt_number and 'receipt' in info_data:
+            receipt_number = info_data.get('receipt', {}).get('number')
+        
+        # Extraer código de autorización
+        authorization_code = info_data.get('authorization_code') or webhook_data.get('authorization_code')
+        if not authorization_code and 'webhook_data' in info_data and isinstance(info_data.get('webhook_data'), dict):
+            authorization_code = info_data.get('webhook_data', {}).get('authorization_code')
+        
+        # Extraer información financiera
+        amount_in_cents = info_data.get('amount_in_cents')
+        currency = info_data.get('currency') or (payment.order.event.currency if payment.order else 'GTQ')
+        
         # Incluir información detallada sobre el pago
         payment_info = {
             # Información básica
-            'checkout_id': info_data.get('checkout_id', info_data.get('recurrente_checkout_id', 'N/A')),
-            'payment_id': info_data.get('payment_id', info_data.get('recurrente_payment_id', 'N/A')),
+            'checkout_id': checkout_id,
+            'payment_id': payment_id,
             'status': status,
             'status_text': status_text,
-            'estado': info_data.get('estado', status_text),
             
             # Fechas
-            'created_at': info_data.get('created', info_data.get('created_at', 'No disponible')),
-            'expires_at': info_data.get('expires_at', 'No disponible'),
-            'last_updated': format_date(info_data.get('last_updated', info_data.get('webhook_processed_at'))),
+            'created_at': created_at,
+            
+            # Información del recibo
+            'receipt_number': receipt_number,
+            'authorization_code': authorization_code,
             
             # Información del método de pago
-            'payment_method': info_data.get('payment_method', 'N/A'),
-            'card_network': info_data.get('card_network', ''),
-            'card_last4': info_data.get('card_last4', ''),
+            'payment_method': payment_method,
+            'card_network': card_network,
+            'card_last4': card_last4,
             
             # Información financiera
-            'amount_in_cents': info_data.get('amount_in_cents'),
-            'currency': info_data.get('currency'),
-            'fee': info_data.get('fee'),
-            'vat_withheld': info_data.get('vat_withheld'),
+            'amount_in_cents': amount_in_cents,
+            'currency': currency,
         }
         
         # Si hay información de la tarjeta, formatearla para mostrar
@@ -903,25 +988,6 @@ class Recurrente(BasePaymentProvider):
         else:
             payment_info['amount_formatted'] = 'N/A'
         
-        # Formatear comisión y retención de impuestos
-        if payment_info['fee']:
-            try:
-                fee_decimal = payment_info['fee'] / 100.0
-                payment_info['fee_formatted'] = f"{fee_decimal:.2f} {payment_info['currency']}" if payment_info['currency'] else f"{fee_decimal:.2f}"
-            except (ValueError, TypeError):
-                payment_info['fee_formatted'] = 'N/A'
-        else:
-            payment_info['fee_formatted'] = 'N/A'
-            
-        if payment_info['vat_withheld']:
-            try:
-                vat_decimal = payment_info['vat_withheld'] / 100.0
-                payment_info['vat_formatted'] = f"{vat_decimal:.2f} {payment_info['currency']}" if payment_info['currency'] else f"{vat_decimal:.2f}"
-            except (ValueError, TypeError):
-                payment_info['vat_formatted'] = 'N/A'
-        else:
-            payment_info['vat_formatted'] = 'N/A'
-        
         ctx = {
             'request': request,
             'event': self.event,
@@ -935,9 +1001,62 @@ class Recurrente(BasePaymentProvider):
 
     def payment_control_render_short(self, payment):
         """Renderizar información breve para el panel de control"""
-        if payment.info_data.get('is_recurring', False):
-            return _('Pago Recurrente Recurrente: {}').format(payment.info_data.get('payment_id', 'N/A'))
-        return _('Pago Recurrente: {}').format(payment.info_data.get('payment_id', 'N/A'))
+        # Obtener datos reales del pago
+        info_data = payment.info_data or {}
+        
+        # Si el pago está confirmado, mostrar información disponible o valores por defecto
+        if payment.state == OrderPayment.PAYMENT_STATE_CONFIRMED:
+            # Extraer información del recibo
+            receipt_number = info_data.get('receipt_number', '')
+            if not receipt_number and 'receipt' in info_data:
+                receipt_number = info_data.get('receipt', {}).get('number', '')
+            if not receipt_number:
+                receipt_number = f"Pago #{payment.pk}"  # Si no hay número de recibo, usar ID de pago
+            
+            # Extraer código de autorización
+            auth_code = info_data.get('authorization_code', '')
+            
+            # Extraer información de la tarjeta
+            card_network = info_data.get('card_network', '')
+            card_last4 = info_data.get('card_last4', '')
+            card_info = f"{card_network.upper()} ****{card_last4}" if card_network and card_last4 else "Tarjeta"
+            
+            # Fecha de pago
+            created_at = ""
+            if info_data.get('created_at'):
+                try:
+                    from .utils import format_date
+                    created_at = format_date(info_data.get('created_at'))
+                except:
+                    created_at = info_data.get('created_at')
+            
+            # Siempre mostrar al menos el recibo para pagos confirmados
+            return mark_safe(f"""
+            <div class="payment-recurrente-info" style="margin-top:5px; line-height:1.5;">
+                <div><span style="font-weight:bold;color:#337ab7;">Recibo:</span> {receipt_number}</div>
+                {f'<div><span style="font-weight:bold;color:#337ab7;">Autorización:</span> {auth_code}</div>' if auth_code else ''}
+                <div><span style="font-weight:bold;color:#337ab7;">Método:</span> {card_info}</div>
+                {f'<div><span style="font-weight:bold;color:#337ab7;">Fecha:</span> {created_at}</div>' if created_at else ''}
+            </div>
+            """)
+        
+        # Para pagos pendientes
+        elif payment.state == OrderPayment.PAYMENT_STATE_PENDING:
+            checkout_url = info_data.get('checkout_url', '')
+            return mark_safe(f"""
+            <div class="payment-recurrente-info" style="margin-top:5px;">
+                <span style="color:#f0ad4e;"><i class="fa fa-clock-o"></i> Pago pendiente</span>
+                {f'<br><a href="{checkout_url}" target="_blank" class="btn btn-xs btn-default">Abrir página de pago</a>' if checkout_url else ''}
+            </div>
+            """)
+        
+        # Para pagos fallidos
+        elif payment.state == OrderPayment.PAYMENT_STATE_FAILED:
+            # Mostrar mensaje de fallido
+            return mark_safe('<span style="color:#d9534f;"><i class="fa fa-times-circle"></i> Pago fallido</span>')
+        
+        # Para cualquier otro estado
+        return mark_safe(f'<span class="label label-default">{payment.get_state_display()}</span>')
 
     def payment_refund_supported(self, payment):
         """Verificar si el pago permite reembolsos"""
@@ -1032,15 +1151,41 @@ class Recurrente(BasePaymentProvider):
         <dl class="dl-horizontal">
             <dt>ID de Reembolso:</dt><dd>{refund_id}</dd>
             <dt>ID de Pago:</dt><dd>{payment_id}</dd>
-            <dt>Estado:</dt><dd>{status}</dd>
+            <dt>Estado:</dt><dd><span class="label label-{status_class}">{status}</span></dd>
             <dt>Creado:</dt><dd>{created_at}</dd>
+            <dt>Monto:</dt><dd>{amount} {currency}</dd>
         </dl>
         """
+        
+        # Determinar clase de estilo según el estado
+        status = refund.info_data.get('status', 'pending')
+        status_class = {
+            'succeeded': 'success',
+            'pending': 'warning',
+            'failed': 'danger',
+            'canceled': 'default'
+        }.get(status, 'default')
+        
+        # Formatear monto
+        currency = refund.order.event.currency if refund.order else 'GTQ'
+        amount = f"{refund.amount:.2f}" if hasattr(refund, 'amount') and refund.amount else 'N/A'
+        
+        # Traducir estado a español
+        status_text = {
+            'succeeded': 'Completado',
+            'pending': 'Pendiente',
+            'failed': 'Fallido',
+            'canceled': 'Cancelado'
+        }.get(status, status)
+        
         return template.format(
             refund_id=refund.info_data.get('refund_id', 'N/A'),
             payment_id=refund.info_data.get('payment_id', 'N/A'),
-            status=refund.info_data.get('status', 'N/A'),
-            created_at=refund.info_data.get('created_at', 'N/A')
+            status=status_text,
+            status_class=status_class,
+            created_at=refund.info_data.get('created_at', 'N/A'),
+            amount=amount,
+            currency=currency
         )
 
     def api_payment_details(self, payment):
@@ -1069,9 +1214,112 @@ class Recurrente(BasePaymentProvider):
         if not payment.info_data:
             return _('No hay información disponible sobre este pago')
 
+        # Crear una copia de los datos y procesarlos para la visualización
+        payment_info = payment.info_data.copy()
+        
+        # Mapear campos de la respuesta de Recurrente a los campos que espera la plantilla
+        
+        # Estado del pago
+        if payment_info.get('status_recurrente'):
+            payment_info['status'] = payment_info['status_recurrente']
+        elif not payment_info.get('status'):
+            payment_info['status'] = 'succeeded' if payment.state == OrderPayment.PAYMENT_STATE_CONFIRMED else 'pending'
+        
+        # IDs y referencias
+        if payment_info.get('external_payment_id'):
+            payment_info['payment_id'] = payment_info['external_payment_id']
+        
+        if payment_info.get('external_checkout_id'):
+            payment_info['checkout_id'] = payment_info['external_checkout_id']
+        
+        # Número de recibo o transacción
+        if payment_info.get('receipt_number'):
+            payment_info['numero_recibo'] = payment_info['receipt_number']
+        elif payment.state == OrderPayment.PAYMENT_STATE_CONFIRMED:
+            payment_info['numero_recibo'] = f"R{payment.pk}"
+        
+        # Código de autorización
+        if payment_info.get('authorization_code'):
+            payment_info['codigo_autorizacion'] = payment_info['authorization_code']
+            
+        # Fecha y hora
+        if payment_info.get('created_at_recurrente'):
+            payment_info['created'] = payment_info['created_at_recurrente']
+            payment_info['fecha_pago'] = payment_info['created_at_recurrente']
+        elif not payment_info.get('created'):
+            payment_info['created'] = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+            payment_info['fecha_pago'] = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+        
+        # Método de pago
+        if payment_info.get('payment_method_type'):
+            payment_info['payment_method'] = payment_info['payment_method_type']
+            payment_info['metodo_pago'] = payment_info['payment_method_type']
+        elif payment_info.get('card_network'):
+            payment_info['metodo_pago'] = f"Tarjeta {payment_info['card_network']}"
+        else:
+            payment_info['metodo_pago'] = "Tarjeta"
+        
+        # Información de la tarjeta
+        if payment_info.get('card_network'):
+            payment_info['card_network'] = payment_info['card_network']
+        
+        if payment_info.get('card_last4'):
+            payment_info['card_last4'] = payment_info['card_last4']
+            if payment_info.get('metodo_pago'):
+                payment_info['metodo_pago'] += f" •••• {payment_info['card_last4']}"
+        
+        # Información del cliente
+        if payment_info.get('customer_name'):
+            payment_info['customer_name'] = payment_info['customer_name']
+        elif payment.order and payment.order.invoice_address and payment.order.invoice_address.name:
+            payment_info['customer_name'] = payment.order.invoice_address.name
+        
+        if payment_info.get('customer_email'):
+            payment_info['customer_email'] = payment_info['customer_email']
+        elif payment.order and payment.order.email:
+            payment_info['customer_email'] = payment.order.email
+            
+        # Información del comercio
+        if payment.order and payment.order.event.organizer:
+            payment_info['comercio_nombre'] = payment.order.event.organizer.name
+        
+        # Monto
+        if payment_info.get('amount_in_cents'):
+            payment_info['amount_in_cents'] = payment_info['amount_in_cents']
+        elif payment.amount:
+            # Convertir a centavos
+            payment_info['amount_in_cents'] = int(payment.amount * 100)
+            
+        if not payment_info.get('amount') and payment.amount:
+            payment_info['amount'] = float(payment.amount)
+            
+        if not payment_info.get('currency') and payment.order:
+            payment_info['currency'] = payment.order.event.currency
+            
+        # Descripción del producto
+        if payment.order and payment.order.event:
+            producto = payment.order.event.name
+            if payment.order.positions.exists():
+                position = payment.order.positions.first()
+                if position.item:
+                    producto = position.item.name
+            payment_info['producto_descripcion'] = producto
+            payment_info['producto_titulo'] = producto
+            
+        # Estado descriptivo en español
+        if payment.state == OrderPayment.PAYMENT_STATE_CONFIRMED:
+            payment_info['estado'] = 'CONFIRMADO'
+        elif payment.state == OrderPayment.PAYMENT_STATE_PENDING:
+            payment_info['estado'] = 'PENDIENTE'
+        elif payment.state == OrderPayment.PAYMENT_STATE_FAILED:
+            payment_info['estado'] = 'FALLIDO'
+        elif payment.state == OrderPayment.PAYMENT_STATE_CANCELED:
+            payment_info['estado'] = 'CANCELADO'
+        
+        # Usar la plantilla con los datos procesados
         template = get_template('pretix_recurrente/payment_info.html')
         ctx = {
-            'payment_info': payment.info_data,
+            'payment_info': payment_info,
             'payment': payment,
             'order': payment.order,
         }
@@ -1086,21 +1334,58 @@ class Recurrente(BasePaymentProvider):
         if not payment.info_data:
             return None
 
-        return {
-            'subject': _('Información de pago'),
-            'text': get_template('pretix_recurrente/email/order_paid.txt').render({
-                'payment_info': payment.info_data,
-                'payment': payment,
-                'order': payment.order,
-                'currency': payment.order.event.currency,
-            }),
-            'html': get_template('pretix_recurrente/email/order_paid.html').render({
-                'payment_info': payment.info_data,
-                'payment': payment,
-                'order': payment.order,
-                'currency': payment.order.event.currency,
-            }),
-        }
+        # Asegurarnos de que tengamos todos los datos necesarios para la plantilla
+        payment_info = payment.info_data.copy()
+        
+        # Campos obligatorios con valores predeterminados si no existen
+        if not payment_info.get('status'):
+            payment_info['status'] = 'succeeded' if payment.state == OrderPayment.PAYMENT_STATE_CONFIRMED else 'pending'
+            
+        if not payment_info.get('receipt_number') and payment.state == OrderPayment.PAYMENT_STATE_CONFIRMED:
+            payment_info['receipt_number'] = f"R{payment.pk}"
+            
+        if not payment_info.get('transaction_date'):
+            payment_info['transaction_date'] = payment_info.get('created', datetime.now().strftime('%d/%m/%Y %H:%M'))
+            
+        if not payment_info.get('amount') and payment.amount:
+            payment_info['amount'] = float(payment.amount)
+        
+        # Intentar enviar el correo con manejo de errores
+        try:
+            return {
+                'subject': _('Información de pago'),
+                'text': get_template('pretix_recurrente/email/order_paid.txt').render({
+                    'payment_info': payment_info,
+                    'payment': payment,
+                    'order': payment.order,
+                    'currency': payment.order.event.currency,
+                }),
+                'html': get_template('pretix_recurrente/email/order_paid.html').render({
+                    'payment_info': payment_info,
+                    'payment': payment,
+                    'order': payment.order,
+                    'currency': payment.order.event.currency,
+                }),
+            }
+        except Exception as e:
+            logger.exception(f"Error al renderizar plantilla de email para pago {payment.pk}: {str(e)}")
+            
+            # Crear una versión simplificada en caso de error con la plantilla
+            texto_simple = f"""
+            Tu pago de {payment.amount} {payment.order.event.currency} para el pedido {payment.order.code} ha sido recibido.
+            
+            Estado del pago: {payment_info.get('status', 'Confirmado')}
+            ID de referencia: {payment_info.get('payment_id', payment.pk)}
+            Fecha: {payment_info.get('transaction_date', datetime.now().strftime('%d/%m/%Y %H:%M'))}
+            
+            Gracias por tu compra.
+            """
+            
+            return {
+                'subject': _('Información de pago'),
+                'text': texto_simple,
+                'html': f"<p>{texto_simple.replace(chr(10), '<br>')}</p>",
+            }
 
     def matching_id(self, payment):
         """ID para hacer matching con sistemas externos"""
@@ -1155,6 +1440,27 @@ class Recurrente(BasePaymentProvider):
             logger.exception(f"Error al cancelar pago {payment.pk}: {str(e)}")
             raise PaymentException(_("Error al cancelar el pago: {}").format(str(e)))
 
+    def _get_api_settings(self, event):
+        """Obtener configuración de API para un evento específico"""
+        try:
+            settings = SettingsSandbox('payment', 'recurrente', event)
+            return {
+                'public_key': settings.get('api_key', ''),
+                'secret_key': settings.get('api_secret', ''),
+                'webhook_secret': settings.get('webhook_secret', ''),
+                'ignore_ssl': settings.get('ignore_ssl', as_type=bool, default=False),
+                'test_mode': settings.get('test_mode', as_type=bool, default=False),
+            }
+        except Exception as e:
+            logger.exception(f"Error al obtener configuración de API: {e}")
+            return {
+                'public_key': '',
+                'secret_key': '',
+                'webhook_secret': '',
+                'ignore_ssl': False,
+                'test_mode': False
+            }
+
 # Registrar el proveedor de pago
 from django.dispatch import receiver
 from pretix.base.signals import register_payment_providers
@@ -1162,3 +1468,243 @@ from pretix.base.signals import register_payment_providers
 @receiver(register_payment_providers, dispatch_uid="payment_recurrente")
 def register_payment_provider(sender, **kwargs):
     return Recurrente  # Solo retornamos la clase, no una instancia
+
+def scrape_recurrente_receipt(checkout_url):
+    """
+    Extrae los datos del recibo directamente de la página web de Recurrente
+    
+    Args:
+        checkout_url: URL de la página de checkout/receipt
+        
+    Returns:
+        dict: Información del recibo extraída o diccionario vacío si hay error
+    """
+    if not checkout_url:
+        return {}
+    
+    try:
+        logger.info(f"Intentando extraer datos del recibo desde: {checkout_url}")
+        
+        # Realizar petición GET a la URL
+        response = requests.get(checkout_url, timeout=15)
+        if response.status_code != 200:
+            logger.warning(f"Error al consultar la página de recibo: {response.status_code}")
+            return {}
+        
+        # Analizar el contenido HTML
+        html_content = response.text
+        logger.info(f"Contenido HTML obtenido, longitud: {len(html_content)}")
+        
+        # Extraer datos con expresiones regulares
+        data = {}
+        
+        # Buscar campos específicos que aparecen en el recibo de Recurrente
+        
+        # Extraer número de recibo
+        receipt_number_patterns = [
+            r'Receipt number\s*[:\n]\s*([0-9-]+)',  # Inglés
+            r'Número de recibo\s*[:\n]\s*([0-9-]+)',  # Español
+            r'receipt_number"[^>]*>([0-9-]+)',      # HTML
+            r'recibo"[^>]*>([0-9-]+)',              # HTML
+            r'number"[^>]*>\s*([0-9]{4}-[0-9]{3})', # Formato típico Recurrente en JSON/DOM
+            r'([0-9]{4}-[0-9]{3})'                  # Formato típico de Recurrente
+        ]
+        
+        for pattern in receipt_number_patterns:
+            match = re.search(pattern, html_content, re.IGNORECASE)
+            if match:
+                data['receipt_number'] = match.group(1).strip()
+                logger.info(f"Encontrado número de recibo: {data['receipt_number']}")
+                break
+        
+        # Extraer código de autorización
+        auth_code_patterns = [
+            r'Authorization Code\s*[:\n]\s*([0-9A-Z]+)',  # Inglés
+            r'Código de Autorización\s*[:\n]\s*([0-9A-Z]+)',  # Español
+            r'authorization_code"[^>]*>([0-9A-Z]+)',      # HTML
+            r'codigo_autorizacion"[^>]*>([0-9A-Z]+)',     # HTML
+            r'auth-?code"[^>]*>([0-9A-Z]+)',               # HTML alternativo
+            r'auth":\s*"([0-9A-Z]+)"',                    # JSON 
+            r'authorization":\s*"([0-9A-Z]+)"',           # JSON
+            r'authorizationCode":\s*"([0-9A-Z]+)"'        # JSON camelCase
+        ]
+        
+        for pattern in auth_code_patterns:
+            match = re.search(pattern, html_content, re.IGNORECASE)
+            if match:
+                data['authorization_code'] = match.group(1).strip()
+                logger.info(f"Encontrado código de autorización: {data['authorization_code']}")
+                break
+        
+        # Extraer información de la tarjeta - Red (VISA, Mastercard, etc)
+        card_network_patterns = [
+            r'(visa|mastercard|amex|american express|diners club|discover|jcb)\s+\*+',  # Formato común
+            r'payment_method[^>]*>(visa|mastercard|amex|american express|diners club|discover|jcb)',  # HTML
+            r'card-?type"[^>]*>(visa|mastercard|amex|american express|diners club|discover|jcb)',  # HTML
+            r'card-?brand"[^>]*>(visa|mastercard|amex|american express|diners club|discover|jcb)',   # HTML
+            r'network":\s*"(visa|mastercard|amex|american express|diners club|discover|jcb)"',  # JSON
+            r'card_network":\s*"(visa|mastercard|amex|american express|diners club|discover|jcb)"',  # JSON
+            r'brand":\s*"(visa|mastercard|amex|american express|diners club|discover|jcb)"'   # JSON
+        ]
+        
+        for pattern in card_network_patterns:
+            match = re.search(pattern, html_content, re.IGNORECASE)
+            if match:
+                data['card_network'] = match.group(1).strip().upper()
+                logger.info(f"Encontrada red de tarjeta: {data['card_network']}")
+                break
+        
+        # Extraer últimos 4 dígitos de la tarjeta
+        card_last4_patterns = [
+            r'\*+([0-9]{4})\b',  # Formato común: **** 1234
+            r'card-?last4"[^>]*>([0-9]{4})',  # HTML
+            r'last4"[^>]*>([0-9]{4})',        # HTML
+            r'last4":\s*"([0-9]{4})"',        # JSON
+            r'ending in ([0-9]{4})',          # Texto en inglés
+            r'terminada en ([0-9]{4})'        # Texto en español
+        ]
+        
+        for pattern in card_last4_patterns:
+            match = re.search(pattern, html_content, re.IGNORECASE)
+            if match:
+                data['card_last4'] = match.group(1).strip()
+                logger.info(f"Encontrados últimos 4 dígitos: {data['card_last4']}")
+                break
+        
+        # Buscar fragmentos de JSON que puedan contener información de pago
+        json_patterns = [
+            r'window\.__INITIAL_STATE__\s*=\s*({.*})',
+            r'window\.__CHECKOUT_DATA__\s*=\s*({.*})',
+            r'window\.__PAYMENT_DATA__\s*=\s*({.*})',
+            r'var\s+checkoutData\s*=\s*({.*})',
+            r'var\s+paymentData\s*=\s*({.*})',
+            r'data-payment-info\s*=\s*\'({.*})\'',
+            r'data-payment-info\s*=\s*"({.*})"'
+        ]
+        
+        for pattern in json_patterns:
+            match = re.search(pattern, html_content, re.DOTALL)
+            if match:
+                try:
+                    json_str = match.group(1)
+                    json_data = json.loads(json_str)
+                    logger.info("Encontrado fragmento JSON con información")
+                    
+                    # Buscar datos en el JSON anidado
+                    def search_nested_json(obj, fields):
+                        if isinstance(obj, dict):
+                            for field in fields:
+                                if field in obj:
+                                    return obj[field]
+                            for key, value in obj.items():
+                                result = search_nested_json(value, fields)
+                                if result:
+                                    return result
+                        elif isinstance(obj, list):
+                            for item in obj:
+                                result = search_nested_json(item, fields)
+                                if result:
+                                    return result
+                        return None
+                    
+                    # Buscar datos específicos si no se encontraron antes
+                    if not data.get('receipt_number'):
+                        receipt = search_nested_json(json_data, ['receipt_number', 'receiptNumber', 'receipt'])
+                        if receipt and isinstance(receipt, str):
+                            data['receipt_number'] = receipt
+                            logger.info(f"Encontrado número de recibo en JSON: {data['receipt_number']}")
+                        elif receipt and isinstance(receipt, dict) and 'number' in receipt:
+                            data['receipt_number'] = receipt['number']
+                            logger.info(f"Encontrado número de recibo en JSON: {data['receipt_number']}")
+                    
+                    if not data.get('authorization_code'):
+                        auth_code = search_nested_json(json_data, ['authorization_code', 'authorizationCode', 'auth'])
+                        if auth_code and isinstance(auth_code, str):
+                            data['authorization_code'] = auth_code
+                            logger.info(f"Encontrado código de autorización en JSON: {data['authorization_code']}")
+                        elif auth_code and isinstance(auth_code, dict) and 'code' in auth_code:
+                            data['authorization_code'] = auth_code['code']
+                            logger.info(f"Encontrado código de autorización en JSON: {data['authorization_code']}")
+                    
+                    if not data.get('card_network'):
+                        card = search_nested_json(json_data, ['card', 'payment_method', 'paymentMethod'])
+                        if card and isinstance(card, dict):
+                            if 'network' in card:
+                                data['card_network'] = card['network'].upper()
+                                logger.info(f"Encontrada red de tarjeta en JSON: {data['card_network']}")
+                            elif 'brand' in card:
+                                data['card_network'] = card['brand'].upper()
+                                logger.info(f"Encontrada red de tarjeta en JSON: {data['card_network']}")
+                    
+                    if not data.get('card_last4'):
+                        card = search_nested_json(json_data, ['card', 'payment_method', 'paymentMethod'])
+                        if card and isinstance(card, dict) and 'last4' in card:
+                            data['card_last4'] = card['last4']
+                            logger.info(f"Encontrados últimos 4 dígitos en JSON: {data['card_last4']}")
+                    
+                except json.JSONDecodeError:
+                    logger.warning("Error al decodificar JSON encontrado en la página")
+                except Exception as e:
+                    logger.warning(f"Error al procesar JSON: {str(e)}")
+        
+        # Extraer información directamente de scripts JSON en la página
+        script_tags = re.findall(r'<script[^>]*>(.*?)</script>', html_content, re.DOTALL)
+        for script in script_tags:
+            # Buscar objetos JSON que puedan contener información de pago
+            try:
+                # Buscar patrones de objetos JSON con información relevante
+                json_matches = re.findall(r'[{,]\s*"(card|payment|receipt)":', script)
+                if json_matches:
+                    # Intentar extraer el objeto JSON completo
+                    json_obj_match = re.search(r'({[^}]*"(card|payment|receipt)":[^}]*})', script)
+                    if json_obj_match:
+                        try:
+                            # Limpiar el JSON para que sea válido
+                            json_str = json_obj_match.group(1)
+                            # Asegurarse de que es un objeto completo
+                            if not json_str.startswith('{'): json_str = '{' + json_str
+                            if not json_str.endswith('}'): json_str = json_str + '}'
+                            
+                            json_data = json.loads(json_str)
+                            
+                            # Extraer datos si existen
+                            if 'receipt' in json_data and not data.get('receipt_number'):
+                                if isinstance(json_data['receipt'], str):
+                                    data['receipt_number'] = json_data['receipt']
+                                elif isinstance(json_data['receipt'], dict) and 'number' in json_data['receipt']:
+                                    data['receipt_number'] = json_data['receipt']['number']
+                            
+                            if 'card' in json_data:
+                                card_data = json_data['card']
+                                if isinstance(card_data, dict):
+                                    if 'network' in card_data and not data.get('card_network'):
+                                        data['card_network'] = card_data['network'].upper()
+                                    elif 'brand' in card_data and not data.get('card_network'):
+                                        data['card_network'] = card_data['brand'].upper()
+                                    
+                                    if 'last4' in card_data and not data.get('card_last4'):
+                                        data['card_last4'] = card_data['last4']
+                        except Exception as e:
+                            logger.debug(f"Error al procesar fragmento JSON en script: {str(e)}")
+            except Exception as e:
+                logger.debug(f"Error al procesar script tag: {str(e)}")
+        
+        # Si no se encontraron datos suficientes y parece ser un checkout activo,
+        # intentar extraer el ID del checkout para consultar la API
+        if not data.get('card_network') and not data.get('card_last4') and checkout_url:
+            checkout_id = extract_checkout_id_from_url(checkout_url)
+            if checkout_id:
+                data['checkout_id'] = checkout_id
+                logger.info(f"Extraído ID de checkout para futura referencia: {checkout_id}")
+        
+        # Verificar si se extrajo algún dato
+        if data:
+            logger.info(f"Datos extraídos del recibo: {data}")
+            return data
+        else:
+            logger.warning(f"No se pudo extraer información del recibo desde la URL {checkout_url}")
+            return {}
+            
+    except Exception as e:
+        logger.exception(f"Error al extraer datos del recibo: {str(e)}")
+        return {}

@@ -1,0 +1,140 @@
+{% load i18n %}
+{% load eventurl %}
+
+<div class="payment-waiting-container">
+    <div class="panel panel-primary">
+        <div class="panel-heading">
+            <h3 class="panel-title">{% trans "Procesando tu pago con Recurrente" %}</h3>
+        </div>
+        <div class="panel-body text-center">
+            <!-- Indicador visual de espera -->
+            <div class="payment-processing-indicator">
+                <div class="loader-spinner"></div>
+                <div class="countdown-timer" id="countdown-display">
+                    <span id="countdown-time">60</span> {% trans "segundos" %}
+                </div>
+            </div>
+            
+            <div class="payment-status-message">
+                <h4>{% trans "Tu pago está siendo procesado" %}</h4>
+                <p>
+                    {% blocktrans trimmed %}
+                    Estamos esperando la confirmación de Recurrente. 
+                    Cuando recibamos la confirmación, serás redirigido automáticamente.
+                    {% endblocktrans %}
+                </p>
+                
+                <div class="payment-details">
+                    <p><small>{% trans "No cierres esta ventana durante el proceso." %}</small></p>
+                    <p><small>{% trans "Referencia de pago:" %} {{ payment.info_data.checkout_id }}</small></p>
+                </div>
+                
+                <!-- Este contenedor se mostrará cuando el contador llegue a cero -->
+                <div id="redirect-options" style="display: none;">
+                    <p class="text-warning">
+                        {% blocktrans trimmed %}
+                        Parece que la confirmación está tardando más de lo esperado.
+                        {% endblocktrans %}
+                    </p>
+                    
+                    <div class="btn-group" role="group">
+                        <a href="{{ order_url }}" class="btn btn-primary">
+                            <i class="fa fa-check"></i> {% trans "Ver mi pedido" %}
+                        </a>
+                        <a href="{{ event_url }}" class="btn btn-default">
+                            <i class="fa fa-arrow-left"></i> {% trans "Volver al evento" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.payment-waiting-container {
+    max-width: 650px;
+    margin: 0 auto;
+}
+
+.payment-processing-indicator {
+    margin: 30px 0;
+}
+
+.loader-spinner {
+    margin: 0 auto;
+    border: 5px solid #f3f3f3;
+    border-radius: 50%;
+    border-top: 5px solid #3498db;
+    width: 60px;
+    height: 60px;
+    animation: spin 1.5s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.countdown-timer {
+    margin-top: 15px;
+    font-size: 18px;
+    color: #666;
+}
+
+#countdown-time {
+    font-weight: bold;
+    color: #333;
+}
+
+.payment-status-message {
+    margin-top: 20px;
+}
+
+.payment-details {
+    margin: 20px 0;
+    color: #666;
+}
+
+#redirect-options {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #eee;
+}
+</style>
+
+<script>
+    (function() {
+        // Configuración
+        const waitTime = 60; // Tiempo de espera en segundos
+        const orderCode = '{{ order.code }}';
+        const orderSecret = '{{ order.secret }}';
+        const paymentId = '{{ payment.pk }}';
+        const checkoutId = '{{ payment.info_data.checkout_id }}';
+        
+        // Contador regresivo
+        let countdown = waitTime;
+        const countdownDisplay = document.getElementById('countdown-time');
+        const redirectOptions = document.getElementById('redirect-options');
+        
+        // Función para actualizar el contador
+        function updateCountdown() {
+            countdown--;
+            countdownDisplay.textContent = countdown;
+            
+            if (countdown <= 0) {
+                // Mostrar opciones de redirección cuando el contador llega a cero
+                redirectOptions.style.display = 'block';
+                clearInterval(countdownInterval);
+            }
+        }
+        
+        // Iniciar el contador regresivo
+        const countdownInterval = setInterval(updateCountdown, 1000);
+        
+        // Redirigir después del tiempo especificado
+        setTimeout(function() {
+            window.location.href = '{% eventurl event "presale:event.order" order=order.code secret=order.secret %}?paid=yes';
+        }, waitTime * 1000);
+    })();
+</script>

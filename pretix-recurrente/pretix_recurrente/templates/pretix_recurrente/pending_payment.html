@@ -175,125 +175,14 @@
 </style>
 
 <script>
-    (function() {
-        // Configuración
-        const checkInterval = 5000; // Comprobar cada 5 segundos
-        const maxAttempts = 24;     // Máximo 2 minutos (24 intentos * 5 segundos)
-        
-        let attempts = 0;
-        let isChecking = false; // Para evitar múltiples solicitudes simultáneas
-        
-        // Construir la URL del endpoint
-        const orderCode = '{{ order.code }}';
-        const orderSecret = '{{ order.secret }}';
-        const paymentId = '{{ payment.pk }}';
-        
-        function buildCheckUrl(forceCheck = false) {
-            let url = '{% url "plugins:pretix_recurrente:check_status" organizer=order.event.organizer.slug event=order.event.slug %}?order=' + orderCode + '&secret=' + orderSecret + '&payment=' + paymentId;
-            if (forceCheck) {
-                url += '&force_check=1';
-            }
-            return url;
+    // No hay verificaciones automáticas - Confiamos 100% en los webhooks
+    // Los usuarios pueden actualizar manualmente usando el botón "Actualizar estado del pago"
+    
+    // Agregar clase para mejorar visibilidad al botón de actualización manual 
+    document.addEventListener('DOMContentLoaded', function() {
+        const updateBtn = document.getElementById('update-status-btn');
+        if (updateBtn) {
+            updateBtn.classList.add('btn-lg');
         }
-        
-        // Función para verificar el estado del pago
-        function checkPaymentStatus() {
-            if (isChecking) return; // Evitar múltiples solicitudes simultáneas
-            
-            isChecking = true;
-            attempts++;
-            
-            console.log(`Intento ${attempts}: Verificando estado del pago...`);
-            
-            // Cada tercer intento, hacer una verificación forzada directo con Recurrente
-            const shouldForceCheck = attempts % 3 === 0;
-            const checkUrl = buildCheckUrl(shouldForceCheck);
-            
-            if (shouldForceCheck) {
-                console.log('Realizando verificación forzada con Recurrente...');
-            }
-            
-            fetch(checkUrl, {
-                method: 'GET',
-                headers: {
-                    'Cache-Control': 'no-cache, no-store, must-revalidate',
-                    'Pragma': 'no-cache',
-                    'Expires': '0',
-                    'Accept': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest' // Para identificar solicitudes AJAX
-                },
-                cache: 'no-store'
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`Error en la respuesta del servidor: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log(`Respuesta recibida:`, data);
-                
-                // Verificar si el pago está confirmado de varias maneras
-                const paymentConfirmed = 
-                    data.paid === true || 
-                    data.payment_state === 'confirmed' || 
-                    data.order_status === 'p' ||
-                    (data.payment_info && (
-                        data.payment_info.status === 'succeeded' || 
-                        data.payment_info.status === 'paid'
-                    ));
-                
-                if (paymentConfirmed) {
-                    console.log('¡Pago confirmado! Recargando página...');
-                    // Forzar recarga completa de la página sin caché
-                    window.location.href = window.location.href.split('?')[0] + '?nocache=' + new Date().getTime();
-                } else if (attempts < maxAttempts) {
-                    // Si aún no está confirmado, programar próxima verificación
-                    isChecking = false;
-                    setTimeout(checkPaymentStatus, checkInterval);
-                } else {
-                    // Si hemos alcanzado el máximo de intentos, ofrecer actualización manual
-                    console.log('Máximo de intentos alcanzado. Cambiando a modo manual.');
-                    const updateBtn = document.getElementById('update-status-btn');
-                    if (updateBtn) {
-                        updateBtn.classList.add('btn-primary');
-                        updateBtn.classList.remove('btn-default');
-                        updateBtn.innerHTML = '<i class="fa fa-refresh"></i> {% trans "Actualizar ahora" %}';
-                    }
-                    
-                    // Mostrar mensaje al usuario
-                    const processingElem = document.querySelector('.processing-payment');
-                    if (processingElem) {
-                        processingElem.innerHTML = '<span class="label label-warning">{% trans "Pendiente" %}</span> <a href="{{ update_url }}" class="btn btn-xs btn-primary">{% trans "Comprobar ahora" %}</a>';
-                    }
-                    
-                    // Añadir mensaje para el usuario
-                    const helpBlock = document.querySelector('.help-block');
-                    if (helpBlock) {
-                        const timeoutMsg = document.createElement('div');
-                        timeoutMsg.className = 'alert alert-warning';
-                        timeoutMsg.innerHTML = '<p><i class="fa fa-exclamation-triangle"></i> {% trans "Han pasado 2 minutos y no hemos recibido confirmación automática. Puedes intentar verificar manualmente o contactar al organizador." %}</p>';
-                        helpBlock.prepend(timeoutMsg);
-                    }
-                    
-                    isChecking = false;
-                }
-            })
-            .catch(error => {
-                console.error('Error al verificar estado del pago:', error);
-                // Si hay error, seguir intentando hasta alcanzar el máximo
-                isChecking = false;
-                if (attempts < maxAttempts) {
-                    setTimeout(checkPaymentStatus, checkInterval);
-                }
-            });
-        }
-        
-        // Iniciar la verificación automática
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => setTimeout(checkPaymentStatus, 1000));
-        } else {
-            setTimeout(checkPaymentStatus, 1000); // Empezar después de 1 segundo
-        }
-    })();
+    });
 </script> 

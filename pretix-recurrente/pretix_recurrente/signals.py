@@ -100,21 +100,22 @@ def update_pending_payments(sender, **kwargs):
     """
 
 
-@receiver(nav_event, dispatch_uid="recurrente_nav_event")
-def navbar_entry(sender, request, **kwargs):
-    """
-    Agrega un enlace al menú de navegación para acceder a la vista de pruebas
-    """
-    url = resolve(request.path_info)
-    if not request.user.has_event_permission(request.organizer, request.event, 'can_change_orders'):
-        return []
-
-    return [{
-        'label': _('Pruebas Recurrente'),
-        'url': reverse('plugins:pretix_recurrente:test', kwargs={
-            'organizer': request.organizer.slug,
-            'event': request.event.slug,
-        }),
-        'active': url.namespace == 'plugins:pretix_recurrente' and url.url_name == 'test',
-        'icon': 'lab',
-    }]
+# La siguiente función ha sido comentada porque la vista de pruebas no está implementada
+# @receiver(nav_event, dispatch_uid="recurrente_nav_event")
+# def navbar_entry(sender, request, **kwargs):
+#     """
+#     Agrega un enlace al menú de navegación para acceder a la vista de pruebas
+#     """
+#     url = resolve(request.path_info)
+#     if not request.user.has_event_permission(request.organizer, request.event, 'can_change_orders'):
+#         return []
+#
+#     return [{
+#         'label': _('Pruebas Recurrente'),
+#         'url': reverse('plugins:pretix_recurrente:test', kwargs={
+#             'organizer': request.organizer.slug,
+#             'event': request.event.slug,
+#         }),
+#         'active': url.namespace == 'plugins:pretix_recurrente' and url.url_name == 'test',
+#         'icon': 'lab',
+#     }]

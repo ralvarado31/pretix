@@ -1,6 +1,6 @@
 Metadata-Version: 2.2
 Name: pretix-recurrente
-Version: 0.1.2
+Version: 0.1.19
 Summary: Pasarela de pago Recurrente para Pretix
 Home-page: https://github.com/dentrada/pretix-recurrente
 Author: Dentrada
@@ -41,93 +41,99 @@ Dynamic: summary
 
 # Pretix Recurrente Plugin
 
-Este plugin integra la plataforma de procesamiento de pagos [Recurrente](https://recurrente.com/) con el sistema de venta de entradas [Pretix](https://pretix.eu/).
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11-blue)](https://www.python.org/)
+[![Pretix Compatibility](https://img.shields.io/badge/pretix-4.x-green)](https://pretix.eu/)
+
+Este plugin proporciona una integración robusta y confiable entre la plataforma de procesamiento de pagos [Recurrente](https://recurrente.com/) y el sistema de venta de entradas [Pretix](https://pretix.eu/), permitiendo procesar pagos de manera segura y eficiente.
 
 ## Características
 
-- Procesamiento de pagos con tarjeta de crédito/débito a través de Recurrente
-- Soporte para pagos recurrentes (suscripciones)
-- Reembolsos integrados con el flujo de Pretix
-- Configuración de entorno de pruebas (sandbox)
-- Webhooks para actualización automática del estado de pagos
-- URLs de redirección personalizables (éxito, cancelación)
+- **Procesamiento de pagos seguro**: Integración completa con la API de Recurrente para procesar pagos con tarjeta de crédito/débito
+- **Manejo robusto de webhooks**: Procesamiento seguro de notificaciones de Recurrente con verificación de firma y prevención de duplicados
+- **Gestión de estados de pago**: Manejo completo del ciclo de vida del pago (pendiente, completado, fallido)
+- **Prevención de condiciones de carrera**: Implementación de mecanismos de bloqueo para evitar problemas de concurrencia
+- **Idempotencia**: Garantiza que cada pago se procese una sola vez, incluso si se reciben múltiples notificaciones
+- **Experiencia de usuario mejorada**: Mensajes claros y flujo de pago optimizado
 
 ## Instalación
 
-Para instalar el plugin en una instancia de Pretix, puedes usar pip:
+Consulta la [guía de instalación detallada](docs/instalacion.md) para instrucciones completas. Resumen básico:
 
 ```bash
+# Desde el entorno virtual de Pretix
 pip install pretix-recurrente
-```
 
-O desde el código fuente:
-
-```bash
+# O desde el código fuente
 pip install -e /ruta/al/directorio/pretix-recurrente
 ```
 
-Después de instalar, habilita el plugin en la configuración de Pretix.
-
 ## Configuración
 
-El plugin requiere la configuración de varias opciones:
+El plugin requiere configurar las siguientes opciones en Pretix:
 
-1. **Credenciales API**: 
-   - API Key (X-PUBLIC-KEY)
-   - API Secret (X-SECRET-KEY)
-   - Webhook Secret
+### Credenciales y URLs
 
-2. **URLs de API**:
-   - URL de API para producción (por defecto: https://app.recurrente.com/api)
-   - URL de API para sandbox (por defecto: https://app.recurrente.com/api)
-   - Ruta alternativa de API (opcional)
+- **API Key**: Clave pública proporcionada por Recurrente
+- **API Secret**: Clave privada para autenticación con la API
+- **Webhook Secret**: Secreto usado para verificar la autenticidad de las notificaciones
+- **URL de API**: Endpoint base de la API (producción o sandbox)
 
-3. **Configuración de pagos recurrentes (opcional)**:
-   - Frecuencia (mensual, semanal, quincenal)
-   - Comportamiento al finalizar (cancelar o continuar)
+### Configuración de Webhooks
 
-4. **Opciones adicionales**:
-   - Descripción del pago
-   - Modo de pruebas
-   - Ignorar verificación SSL (solo para depuración)
+Es fundamental configurar correctamente el endpoint de webhooks en el panel de Recurrente:
 
-## Flujo de pago
+```
+https://tu-dominio-pretix.com/plugins/pretix_recurrente/webhook/
+```
 
-1. El usuario selecciona el método de pago Recurrente durante el checkout de Pretix
-2. El sistema crea un usuario en Recurrente (o actualiza uno existente) 
-3. Se crea un checkout en Recurrente con los datos del pedido
-4. El usuario es redirigido a la página de pago de Recurrente
-5. Después del pago, el usuario es redirigido de vuelta a Pretix
-6. Opcionalmente, Recurrente envía notificaciones vía webhook para actualizar el estado
+Este endpoint global procesará notificaciones de cambios de estado en los pagos para todos los eventos.
 
-## Reembolsos
+## Estructura del Proyecto
 
-El plugin soporta reembolsos completos y parciales desde el panel de administración de Pretix. Los reembolsos se procesan a través de la API de Recurrente.
+El plugin ha sido refactorizado siguiendo las mejores prácticas de desarrollo:
 
-## Personalización
+- `/pretix_recurrente/`
+  - `views/`: Módulos separados para cada tipo de vista
+    - `webhooks.py`: Procesamiento de notificaciones de Recurrente
+    - `payment_flow.py`: Manejo del flujo de pagos (éxito, cancelación)
+    - `payment_status.py`: Verificación y actualización de estados de pago
+  - `payment.py`: Implementación del proveedor de pago
+  - `utils.py`: Funciones utilitarias y herramientas generales
+  - `templates/`: Plantillas HTML para la interfaz de usuario
+  - `static/`: Archivos estáticos (CSS, JS, imágenes)
 
-El plugin incluye plantillas personalizables para la experiencia del usuario:
-- `checkout_payment_form.html`: Formulario de pago durante el checkout
-- `success.html`: Página de éxito después del pago
-- `cancel.html`: Página mostrada cuando se cancela un pago
+## Flujo de Pago
 
-## Solución de problemas
+1. El usuario selecciona Recurrente como método de pago en Pretix
+2. El sistema crea un checkout en Recurrente con los detalles del pedido y metadatos
+3. El usuario es redirigido a la página de pago de Recurrente
+4. Después del pago:
+   - El usuario es redirigido de vuelta a Pretix (vista `success`)
+   - Recurrente envía una notificación webhook (procesada por `global_webhook`)
+   - El pedido se marca como pagado automáticamente
 
-Si encuentras problemas con la integración:
+## Solución de Problemas
 
-1. Verifica los logs del servidor Pretix, donde se registran todos los mensajes y errores del plugin
-2. Asegúrate de que las credenciales API sean correctas
-3. Prueba la conexión con la API desde la configuración del plugin
-4. Verifica que el webhook esté correctamente configurado en Recurrente
+Consulta la [guía de solución de problemas](docs/instalacion.md#solución-de-problemas) para diagnosticar y resolver problemas comunes.
 
 ## Desarrollo
 
-Para contribuir al desarrollo del plugin:
+Para contribuir al desarrollo:
 
 1. Clona el repositorio
-2. Instala el plugin en modo desarrollo
-3. Configura un entorno Pretix de prueba
-4. Realiza cambios y pruebas
+2. Instala las dependencias de desarrollo: `pip install -e ".[dev]"`
+3. Ejecuta las pruebas: `pytest`
+4. Envía un Pull Request con tus mejoras
+
+## Seguridad
+
+Este plugin implementa múltiples capas de seguridad:
+
+- Verificación de firmas de webhooks con svix
+- Bloqueos para prevenir pagos duplicados
+- Validación estricta de datos recibidos
+- Manejo seguro de excepciones y errores
 
 ## Licencia
 

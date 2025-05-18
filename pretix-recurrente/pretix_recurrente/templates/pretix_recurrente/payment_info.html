@@ -2,82 +2,315 @@
 {% load l10n %}
 
 <div class="payment-recurrente-info">
-    <h4>{% trans "Información del pago con Recurrente" %}</h4>
+    <h4>{% trans "Comprobante de Pago - Recurrente" %}</h4>
     
-    <table class="table table-condensed">
+    <div class="payment-status-header">
+        {% if payment_info.estado %}
+            <div class="payment-status payment-status-success">
+                <span>{{ payment_info.estado|upper }}</span>
+            </div>
+        {% elif payment_info.status == 'succeeded' or payment_info.status == 'paid' %}
+            <div class="payment-status payment-status-success">
+                <span>{% trans "EXITOSO" %}</span>
+            </div>
+        {% elif payment_info.status == 'failed' %}
+            <div class="payment-status payment-status-failed">
+                <span>{% trans "FALLIDO" %}</span>
+            </div>
+        {% elif payment_info.status == 'pending' %}
+            <div class="payment-status payment-status-pending">
+                <span>{% trans "PENDIENTE" %}</span>
+            </div>
+        {% else %}
+            <div class="payment-status payment-status-default">
+                <span>{{ payment_info.status|upper }}</span>
+            </div>
+        {% endif %}
+    </div>
+    
+    <table class="table table-striped table-hover receipt-table">
         <tbody>
-            {% if payment_info.receipt_number %}
+            <!-- SECCIÓN: INFORMACIÓN PRINCIPAL DEL PAGO -->
             <tr>
-                <th>{% trans "Número de recibo:" %}</th>
-                <td>{{ payment_info.receipt_number }}</td>
+                <th>{% trans "Estado del pago" %}</th>
+                <td>
+                    {% if payment_info.estado %}
+                        <span class="text-success">{{ payment_info.estado }}</span>
+                    {% elif payment_info.status == 'succeeded' or payment_info.status == 'paid' %}
+                        <span class="text-success">{% trans "EXITOSO" %}</span>
+                    {% elif payment_info.status == 'failed' %}
+                        <span class="text-danger">{% trans "FALLIDO" %}</span>
+                    {% elif payment_info.status == 'pending' %}
+                        <span class="text-warning">{% trans "PENDIENTE" %}</span>
+                    {% else %}
+                        {{ payment_info.status|upper }}
+                    {% endif %}
+                </td>
+            </tr>
+
+            <!-- SECCIÓN: DETALLES DEL RECIBO -->
+            <tr class="receipt-header">
+                <th colspan="2" class="section-header">
+                    <strong>{% trans "Recibo de pago" %}</strong>
+                </th>
+            </tr>
+            
+            {% if payment_info.numero_recibo or payment_info.receipt_number or payment_info.recibo %}
+            <tr>
+                <th>{% trans "Número de recibo" %}</th>
+                <td>
+                    <strong>
+                    {% if payment_info.numero_recibo %}
+                        {{ payment_info.numero_recibo }}
+                    {% elif payment_info.recibo %}
+                        {{ payment_info.recibo }}
+                    {% else %}
+                        {{ payment_info.receipt_number }}
+                    {% endif %}
+                    </strong>
+                </td>
             </tr>
             {% endif %}
             
-            {% if payment_info.authorization_code %}
+            {% if payment_info.codigo_autorizacion or payment_info.authorization_code or payment_info.autorizacion %}
             <tr>
-                <th>{% trans "Código de autorización:" %}</th>
-                <td>{{ payment_info.authorization_code }}</td>
+                <th>{% trans "Código de autorización" %}</th>
+                <td>
+                    <strong>
+                    {% if payment_info.codigo_autorizacion %}
+                        {{ payment_info.codigo_autorizacion }}
+                    {% elif payment_info.autorizacion %}
+                        {{ payment_info.autorizacion }}
+                    {% else %}
+                        {{ payment_info.authorization_code }}
+                    {% endif %}
+                    </strong>
+                </td>
             </tr>
             {% endif %}
             
-            {% if payment_info.transaction_date %}
+            {% if payment_info.fecha_pago or payment_info.created or payment_info.fecha %}
             <tr>
-                <th>{% trans "Fecha:" %}</th>
-                <td>{{ payment_info.transaction_date }}</td>
+                <th>{% trans "Fecha de pago" %}</th>
+                <td>
+                    {% if payment_info.fecha_pago %}
+                        {{ payment_info.fecha_pago }}
+                    {% elif payment_info.fecha %}
+                        {{ payment_info.fecha }}
+                    {% else %}
+                        {{ payment_info.created }}
+                    {% endif %}
+                </td>
             </tr>
             {% endif %}
+
+            <!-- SECCIÓN: MÉTODO DE PAGO -->
+            <tr class="payment-method-header">
+                <th colspan="2" class="section-header">
+                    <strong>{% trans "Método de pago" %}</strong>
+                </th>
+            </tr>
+            
+            <tr>
+                <th>{% trans "Tipo" %}</th>
+                <td>
+                    {% if payment_info.metodo_pago %}
+                        {{ payment_info.metodo_pago }}
+                    {% elif payment_info.card_network and payment_info.card_last4 %}
+                        <div class="payment-method">
+                            <span class="payment-icon {{ payment_info.card_network|lower }}-icon">{{ payment_info.card_network }}</span>
+                            <span class="card-number">•••• {{ payment_info.card_last4 }}</span>
+                        </div>
+                    {% elif payment_info.card_network %}
+                        {{ payment_info.card_network }}
+                    {% elif payment_info.payment_method == 'card' %}
+                        {% trans "Tarjeta" %}
+                        {% if payment_info.card_last4 %}
+                            •••• {{ payment_info.card_last4 }}
+                        {% endif %}
+                    {% elif payment_info.payment_method %}
+                        {{ payment_info.payment_method|upper }}
+                    {% else %}
+                        {% trans "No especificado" %}
+                    {% endif %}
+                </td>
+            </tr>
+
+            <!-- SECCIÓN: DATOS DEL CLIENTE -->
+            <tr class="customer-header">
+                <th colspan="2" class="section-header">
+                    <strong>{% trans "Información del cliente" %}</strong>
+                </th>
+            </tr>
             
             {% if payment_info.customer_name %}
             <tr>
-                <th>{% trans "Nombre:" %}</th>
+                <th>{% trans "Nombre" %}</th>
                 <td>{{ payment_info.customer_name }}</td>
             </tr>
             {% endif %}
             
             {% if payment_info.customer_email %}
             <tr>
-                <th>{% trans "Correo electrónico:" %}</th>
+                <th>{% trans "Correo electrónico" %}</th>
                 <td>{{ payment_info.customer_email }}</td>
             </tr>
             {% endif %}
+
+            <!-- SECCIÓN: INFORMACIÓN COMERCIAL -->
+            <tr class="merchant-header">
+                <th colspan="2" class="section-header">
+                    <strong>{% trans "Información comercial" %}</strong>
+                </th>
+            </tr>
             
-            {% if payment_info.payment_method %}
+            {% if payment_info.comercio_nombre %}
             <tr>
-                <th>{% trans "Método de pago:" %}</th>
-                <td>{{ payment_info.payment_method }}</td>
+                <th>{% trans "Comercio" %}</th>
+                <td>{{ payment_info.comercio_nombre }}</td>
             </tr>
             {% endif %}
             
-            {% if payment_info.card_last4 %}
+            {% if payment_info.producto_descripcion or payment_info.producto_titulo %}
             <tr>
-                <th>{% trans "Tarjeta:" %}</th>
-                <td>**** **** **** {{ payment_info.card_last4 }}</td>
-            </tr>
-            {% endif %}
-            
-            {% if payment_info.status %}
-            <tr>
-                <th>{% trans "Estado:" %}</th>
+                <th>{% trans "Producto" %}</th>
                 <td>
-                    {% if payment_info.status == 'succeeded' %}
-                        <span class="label label-success">{% trans "Pagado" %}</span>
-                    {% elif payment_info.status == 'failed' %}
-                        <span class="label label-danger">{% trans "Fallido" %}</span>
-                    {% elif payment_info.status == 'pending' %}
-                        <span class="label label-warning">{% trans "Pendiente" %}</span>
+                    {% if payment_info.producto_descripcion %}
+                        {{ payment_info.producto_descripcion }}
                     {% else %}
-                        {{ payment_info.status }}
+                        {{ payment_info.producto_titulo }}
                     {% endif %}
                 </td>
             </tr>
             {% endif %}
             
-            {% if payment_info.payment_id %}
+            {% if payment_info.amount_in_cents and payment_info.currency %}
             <tr>
-                <th>{% trans "ID de pago:" %}</th>
-                <td>{{ payment_info.payment_id }}</td>
+                <th>{% trans "Monto" %}</th>
+                <td>
+                    {% with amount=payment_info.amount_in_cents|floatformat:2|stringformat:'s' %}
+                        {{ payment_info.currency }} {{ amount|slice:":-2" }}.{{ amount|slice:"-2:" }}
+                    {% endwith %}
+                </td>
             </tr>
             {% endif %}
         </tbody>
     </table>
+    
+    {% if payment_info.payment_id %}
+    <div class="payment-reference">
+        <small>{% trans "Referencia de pago:" %} {{ payment_info.payment_id }}</small>
+    </div>
+    {% endif %}
 </div>
+
+<style>
+.payment-recurrente-info {
+    margin: 20px 0;
+    padding: 15px;
+    border-radius: 4px;
+    background-color: #fff;
+    border: 1px solid #e3e3e3;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.payment-status-header {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.section-header {
+    background-color: #f5f5f5;
+    color: #333;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.receipt-header th {
+    background-color: #e8f4f8;
+}
+
+.payment-method-header th {
+    background-color: #f0f8e8;
+}
+
+.customer-header th {
+    background-color: #f8f4e8;
+}
+
+.merchant-header th {
+    background-color: #f8e8f4;
+}
+
+.payment-status {
+    display: inline-block;
+    padding: 8px 15px;
+    border-radius: 4px;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+.payment-status-success {
+    background-color: #28a745;
+    color: white;
+}
+
+.payment-status-failed {
+    background-color: #dc3545;
+    color: white;
+}
+
+.payment-status-pending {
+    background-color: #ffc107;
+    color: #212529;
+}
+
+.payment-status-default {
+    background-color: #6c757d;
+    color: white;
+}
+
+.receipt-table {
+    margin-top: 15px;
+}
+
+.receipt-table th {
+    width: 40%;
+    color: #495057;
+}
+
+.payment-method {
+    display: flex;
+    align-items: center;
+}
+
+.payment-icon {
+    display: inline-block;
+    padding: 2px 5px;
+    margin-right: 10px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.visa-icon {
+    background-color: #f8f9fa;
+    color: #1a1f71;
+}
+
+.mastercard-icon {
+    background-color: #f8f9fa;
+    color: #eb001b;
+}
+
+.card-number {
+    font-family: monospace;
+}
+
+.payment-reference {
+    margin-top: 20px;
+    text-align: center;
+    color: #6c757d;
+}
+</style>

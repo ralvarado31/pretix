@@ -1,0 +1,44 @@
+{% load i18n %}
+
+<div class="payment-recurrente-short-info">
+    {% if payment_info.receipt_number or payment_info.authorization_code %}
+        <div class="card mt-3 mb-3">
+            <div class="card-header">
+                <h5 class="card-title mb-0">{% trans "Datos del recibo" %}</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-condensed">
+                    <tbody>
+                        {% if payment_info.receipt_number %}
+                        <tr>
+                            <th>{% trans "Número de recibo:" %}</th>
+                            <td><strong>{{ payment_info.receipt_number }}</strong></td>
+                        </tr>
+                        {% endif %}
+                        
+                        {% if payment_info.authorization_code %}
+                        <tr>
+                            <th>{% trans "Código de autorización:" %}</th>
+                            <td><strong>{{ payment_info.authorization_code }}</strong></td>
+                        </tr>
+                        {% endif %}
+                        
+                        {% if payment_info.card_network and payment_info.card_last4 %}
+                        <tr>
+                            <th>{% trans "Tarjeta:" %}</th>
+                            <td>{{ payment_info.card_network|upper }} ****{{ payment_info.card_last4 }}</td>
+                        </tr>
+                        {% endif %}
+                        
+                        {% if payment_info.created_at %}
+                        <tr>
+                            <th>{% trans "Fecha:" %}</th>
+                            <td>{{ payment_info.created_at }}</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    {% endif %}
+</div> 

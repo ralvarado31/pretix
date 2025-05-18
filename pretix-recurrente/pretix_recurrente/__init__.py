@@ -1,6 +1,7 @@
 from django.utils.translation import gettext_lazy as _
 
-__version__ = '0.1.2'
+# Actualizado: Mejora en la visualización de datos de autorización y recibo en el panel de administración
+__version__ = '0.1.19'
 
 try:
     from pretix.base.plugins import PluginConfig
@@ -24,3 +25,9 @@ class PluginApp(PluginConfig):
     def installed(self, event):
         # Configuración inicial cuando el plugin es instalado para un evento
         pass
+
+    def register_logtypes(self):
+        from pretix.base.models import LogEntry
+        return {
+            'pretix.plugins.recurrente.payment.confirmed': LogEntry.SYSTEM_CONFIRMED,
+        }
